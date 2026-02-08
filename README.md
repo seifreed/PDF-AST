@@ -56,6 +56,19 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
+pdf-ast = "0.1"
+```
+
+Or with Cargo:
+
+```bash
+cargo add pdf-ast
+```
+
+For a Git dependency:
+
+```toml
+[dependencies]
 pdf-ast = { git = "https://github.com/seifreed/PDF-AST" }
 ```
 
