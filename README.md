@@ -9,8 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/seifreed/PDF-AST/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/seifreed/PDF-AST/blob/main/LICENSE-APACHE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License"></a>
+  <a href="https://github.com/seifreed/PDF-AST/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"></a>
   <a href="https://github.com/seifreed/PDF-AST/actions"><img src="https://img.shields.io/github/actions/workflow/status/seifreed/PDF-AST/ci.yml?style=flat-square&logo=github&label=CI" alt="CI Status"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange?style=flat-square" alt="Rust Stable">
 </p>

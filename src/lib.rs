@@ -10,7 +10,7 @@
 //! - Performance profiling and optimization tools
 //! - Multiple output formats (JSON, YAML, TOML)
 //!
-//! Copyright (C) 2025 Marc Rivero López
+//! Copyright (C) 2026 Marc Rivero López
 //! Licensed under the GNU General Public License v3.0
 //! See LICENSE file for details
 
