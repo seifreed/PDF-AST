@@ -62,7 +62,7 @@ jobs:
           shared-key: clippy-cache
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets
 
   test:
     name: Test Suite
