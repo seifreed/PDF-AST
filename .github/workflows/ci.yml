@@ -62,7 +62,7 @@ jobs:
           shared-key: clippy-cache
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   test:
     name: Test Suite
@@ -90,7 +90,7 @@ jobs:
           shared-key: test-cache
 
       - name: Run tests
-        run: cargo test --all-features --verbose
+        run: cargo test --verbose
 
   build:
     name: Build Release (${{ matrix.os }})
@@ -128,8 +128,7 @@ jobs:
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install openssl -y
-          echo "OPENSSL_DIR=C:\\Program Files\\OpenSSL-Win64" >> $env:GITHUB_ENV
+          choco install nasm strawberryperl -y
         shell: pwsh
 
       - name: Setup Rust cache

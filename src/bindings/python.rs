@@ -343,7 +343,7 @@ impl PyValidationIssue {
 }
 
 /// Python wrapper for PluginManager
-#[pyclass(name = "PluginManager")]
+#[pyclass(name = "PluginManager", unsendable)]
 pub struct PyPluginManager {
     inner: PluginManager,
 }

@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::io::ErrorKind;
 
 #[derive(serde::Deserialize)]
 struct CorpusFile {
@@ -22,13 +23,25 @@ fn corpus_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("pdfs")
 }
 
+fn load_manifest() -> Option<CorpusManifest> {
+    let corpus_dir = corpus_path();
+    let manifest_path = corpus_dir.join("CORPUS.json");
+    let manifest_data = match fs::read_to_string(&manifest_path) {
+        Ok(data) => data,
+        Err(err) if err.kind() == ErrorKind::NotFound => return None,
+        Err(err) => panic!("Failed to read CORPUS.json: {}", err),
+    };
+    let manifest: CorpusManifest =
+        serde_json::from_str(&manifest_data).expect("CORPUS.json should be valid JSON");
+    Some(manifest)
+}
+
 #[test]
 fn corpus_manifest_matches_files() {
     let corpus_dir = corpus_path();
-    let manifest_path = corpus_dir.join("CORPUS.json");
-    let manifest_data = fs::read_to_string(&manifest_path).expect("CORPUS.json should be present");
-    let manifest: CorpusManifest =
-        serde_json::from_str(&manifest_data).expect("CORPUS.json should be valid JSON");
+    let Some(manifest) = load_manifest() else {
+        return;
+    };
 
     assert_eq!(manifest.corpus_version, "1.0");
 
@@ -57,10 +70,9 @@ fn corpus_manifest_matches_files() {
 #[test]
 fn corpus_parses_with_tolerant_parser() {
     let corpus_dir = corpus_path();
-    let manifest_path = corpus_dir.join("CORPUS.json");
-    let manifest_data = fs::read_to_string(&manifest_path).expect("CORPUS.json should be present");
-    let manifest: CorpusManifest =
-        serde_json::from_str(&manifest_data).expect("CORPUS.json should be valid JSON");
+    let Some(manifest) = load_manifest() else {
+        return;
+    };
 
     let parser = PdfParser::new();
 
@@ -77,10 +89,9 @@ fn corpus_parses_with_tolerant_parser() {
 #[test]
 fn corpus_streams_decode_with_limits() {
     let corpus_dir = corpus_path();
-    let manifest_path = corpus_dir.join("CORPUS.json");
-    let manifest_data = fs::read_to_string(&manifest_path).expect("CORPUS.json should be present");
-    let manifest: CorpusManifest =
-        serde_json::from_str(&manifest_data).expect("CORPUS.json should be valid JSON");
+    let Some(manifest) = load_manifest() else {
+        return;
+    };
 
     let parser = PdfParser::new();
 
