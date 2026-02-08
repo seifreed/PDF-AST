@@ -7,7 +7,7 @@ description = "Universal AST for PDF based on ISO 32000-2"
 license = "MIT"
 repository = "https://github.com/seifreed/PDF-AST"
 homepage = "https://github.com/seifreed/PDF-AST"
-keywords = ["pdf", "ast", "security", "malware", "parsing"]
+keywords = ["pdf", "ast", "abstract-syntax-tree", "parsing", "security"]
 categories = ["parsing", "data-structures"]
 
 [dependencies]
