@@ -1,0 +1,19 @@
+# Rust
+**/target/
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Local tooling/config
+/.claude/
+**/CLAUDE.md
+
+# Outputs
+/output/
+
+# Logs
+*.log
+
+# Local formatting config
+rustfmt.toml

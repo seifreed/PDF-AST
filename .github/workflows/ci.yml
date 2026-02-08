@@ -1,0 +1,179 @@
+# Copyright (c) Marc Rivero López
+# Licensed under GNU General Public License v3.0
+# See LICENSE file for full terms
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable 2024-01-01
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Run rustfmt check
+        run: cargo fmt -- --check
+
+  clippy:
+    name: Clippy Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable 2024-01-01
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.3
+        with:
+          shared-key: clippy-cache
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable 2024-01-01
+        with:
+          toolchain: stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.3
+        with:
+          shared-key: test-cache
+
+      - name: Run tests
+        run: cargo test --all-features --verbose
+
+  build:
+    name: Build Release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable 2024-01-01
+        with:
+          toolchain: stable
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install openssl@3 pkg-config
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install openssl -y
+          echo "OPENSSL_DIR=C:\\Program Files\\OpenSSL-Win64" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.3
+        with:
+          shared-key: build-cache-${{ runner.os }}
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Verify binary artifacts (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          ls -lh target/release/pdf-ast
+          ls -lh target/release/pdf-ast-simple
+          ls -lh target/release/pdf-fuzz
+          ls -lh target/release/debug_ast
+
+      - name: Verify binary artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Get-ChildItem -Path target/release/pdf-ast.exe
+          Get-ChildItem -Path target/release/pdf-ast-simple.exe
+          Get-ChildItem -Path target/release/pdf-fuzz.exe
+          Get-ChildItem -Path target/release/debug_ast.exe
+        shell: pwsh
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable 2024-01-01
+        with:
+          toolchain: stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit --deny warnings
