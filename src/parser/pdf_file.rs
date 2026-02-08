@@ -136,7 +136,9 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
         pos
     }
 
-    fn try_parse_linearization_dict(data: &[u8]) -> Option<crate::ast::linearization::LinearizationInfo> {
+    fn try_parse_linearization_dict(
+        data: &[u8],
+    ) -> Option<crate::ast::linearization::LinearizationInfo> {
         let (_, (obj_id, value)) = object_parser::parse_indirect_object(data).ok()?;
 
         if obj_id != ObjectId::new(1, 0) {
@@ -155,7 +157,9 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
         Some(Self::extract_linearization_info(&dict))
     }
 
-    fn extract_linearization_info(dict: &PdfDictionary) -> crate::ast::linearization::LinearizationInfo {
+    fn extract_linearization_info(
+        dict: &PdfDictionary,
+    ) -> crate::ast::linearization::LinearizationInfo {
         use crate::ast::linearization::LinearizationInfo;
 
         let hint_array = dict.get("H").and_then(|v| v.as_array());

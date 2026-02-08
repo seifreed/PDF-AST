@@ -293,7 +293,6 @@ pub fn parse_linearization_dict(stream: &PdfStream) -> Result<LinearizationInfo,
     })
 }
 
-
 /// Parse hybrid XRef table/stream
 /// Some PDFs use both traditional xref tables and xref streams
 pub fn parse_hybrid_xref(input: &[u8]) -> XRefParseResult<'_> {
