@@ -272,11 +272,7 @@ impl JsAstNode {
         }
         meta.set(&mut cx, "warnings", warnings)?;
         let error_count = cx.number(this.inner.metadata.errors.len() as f64);
-        meta.set(
-            &mut cx,
-            "errorCount",
-            error_count,
-        )?;
+        meta.set(&mut cx, "errorCount", error_count)?;
         Ok(meta.upcast())
     }
 

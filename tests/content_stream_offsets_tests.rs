@@ -49,10 +49,7 @@ fn content_stream_operator_offsets_present() {
             .metadata
             .properties
             .contains_key("content_operator_index")
-            && node
-                .metadata
-                .properties
-                .contains_key("stream_local_offset")
+            && node.metadata.properties.contains_key("stream_local_offset")
         {
             found_offset = true;
             break;

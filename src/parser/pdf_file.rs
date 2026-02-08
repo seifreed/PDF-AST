@@ -16,8 +16,7 @@ use crate::types::*;
 use std::collections::HashMap;
 use std::io::{BufRead, Read, Seek, SeekFrom};
 
-type ParseHeaderResult<'a> =
-    Result<(&'a [u8], ObjectId), nom::Err<nom::error::Error<&'a [u8]>>>;
+type ParseHeaderResult<'a> = Result<(&'a [u8], ObjectId), nom::Err<nom::error::Error<&'a [u8]>>>;
 
 // Buffer size constants
 const LINEARIZATION_BUFFER_SIZE: usize = 1024;
@@ -847,10 +846,7 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
                         while j < data.len() && data[j].is_ascii_digit() {
                             j += 1;
                         }
-                        if j + 4 <= data.len()
-                            && &data[j..j + 4] == b" obj"
-                            && start > i
-                        {
+                        if j + 4 <= data.len() && &data[j..j + 4] == b" obj" && start > i {
                             return Some(i);
                         }
                     }

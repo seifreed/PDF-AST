@@ -64,21 +64,21 @@ impl PyPdfDocument {
     /// Get root node
     fn get_root(&self) -> Option<PyAstNode> {
         self.inner.ast.get_root().and_then(|node_id| {
-            self.inner
-                .ast
-                .get_node(node_id)
-                .map(|node| PyAstNode { inner: node.clone() })
+            self.inner.ast.get_node(node_id).map(|node| PyAstNode {
+                inner: node.clone(),
+            })
         })
     }
 
     /// Get node by ID
     fn get_node(&self, node_id: u64) -> Option<PyAstNode> {
         let node_id = usize::try_from(node_id).ok()?;
-        self.inner.ast.get_node(NodeId(node_id)).map(|node| {
-            PyAstNode {
+        self.inner
+            .ast
+            .get_node(NodeId(node_id))
+            .map(|node| PyAstNode {
                 inner: node.clone(),
-            }
-        })
+            })
     }
 
     /// Get children of a node
@@ -92,10 +92,9 @@ impl PyPdfDocument {
             .get_children(node_id)
             .iter()
             .filter_map(|&child_id| {
-                self.inner
-                    .ast
-                    .get_node(child_id)
-                    .map(|node| PyAstNode { inner: node.clone() })
+                self.inner.ast.get_node(child_id).map(|node| PyAstNode {
+                    inner: node.clone(),
+                })
             })
             .collect()
     }
@@ -110,10 +109,9 @@ impl PyPdfDocument {
             .get_nodes_by_type(node_type)
             .iter()
             .filter_map(|node_id| {
-                self.inner
-                    .ast
-                    .get_node(*node_id)
-                    .map(|node| PyAstNode { inner: node.clone() })
+                self.inner.ast.get_node(*node_id).map(|node| PyAstNode {
+                    inner: node.clone(),
+                })
             })
             .collect()
     }
