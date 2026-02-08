@@ -4,6 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProvenanceQuery {
+    Incremental,
+    Recovered,
+    Inferred,
+    FromObjectStream(ObjectId),
+    Revision(u32),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvenanceInfo {
     /// Source information
@@ -644,6 +653,19 @@ impl ProvenanceTracker {
         &self.node_provenance
     }
 
+    pub fn query(&self, query: ProvenanceQuery) -> Vec<NodeId> {
+        self.node_provenance
+            .iter()
+            .filter_map(|(node_id, provenance)| {
+                if provenance_matches_query(provenance, query) {
+                    Some(*node_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn get_document_metadata(&self) -> &DocumentProvenance {
         &self.document_metadata
     }
@@ -660,6 +682,26 @@ impl ProvenanceTracker {
             .elapsed()
             .unwrap_or_default();
         self.document_metadata.parse_duration_ms = duration.as_millis() as u64;
+    }
+}
+
+fn provenance_matches_query(provenance: &ProvenanceInfo, query: ProvenanceQuery) -> bool {
+    match query {
+        ProvenanceQuery::Incremental => !provenance.revision_chain.is_empty(),
+        ProvenanceQuery::Recovered => !provenance.parsing.recovery_operations.is_empty(),
+        ProvenanceQuery::Inferred => provenance.parsing.recovery_operations.iter().any(|op| {
+            matches!(
+                op.operation_type,
+                RecoveryType::StructureReconstruction | RecoveryType::ObjectRepair
+            )
+        }),
+        ProvenanceQuery::FromObjectStream(object_id) => {
+            provenance.source.container_stream == Some(object_id)
+        }
+        ProvenanceQuery::Revision(revision) => provenance
+            .revision_chain
+            .iter()
+            .any(|entry| entry.revision_number == revision),
     }
 }
 

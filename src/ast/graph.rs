@@ -1,5 +1,7 @@
 use crate::ast::{AstNode, NodeId, NodeType};
+use crate::events::AstEventListener;
 use crate::types::{ObjectId, PdfReference, PdfValue};
+use crate::visitor::{AstWalker as VisitorAstWalker, Visitor};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{Bfs, Dfs, EdgeRef};
 use petgraph::Graph;
@@ -51,6 +53,20 @@ impl PdfAstGraph {
             deterministic_ids: false,
             content_hash: HashMap::new(),
         }
+    }
+
+    /// Walks nodes in depth-first order starting from the root node.
+    pub fn walk_nodes<V: Visitor>(&self, visitor: &mut V) {
+        let mut walker = VisitorAstWalker::new(self);
+        walker.walk(visitor);
+    }
+
+    /// Walks nodes with a lightweight callback.
+    pub fn walk_nodes_with<F>(&self, mut f: F)
+    where
+        F: FnMut(&AstNode),
+    {
+        self.walk_nodes(&mut CallbackVisitor { callback: &mut f });
     }
 
     /// Creates a new PDF AST graph with content-based deterministic node IDs.
@@ -112,6 +128,18 @@ impl PdfAstGraph {
             self.object_map.insert(obj_id, node_id);
         }
 
+        node_id
+    }
+
+    /// Creates a node and emits an event to the provided listener.
+    pub fn create_node_with_listener(
+        &mut self,
+        node_type: NodeType,
+        value: PdfValue,
+        listener: &mut dyn AstEventListener,
+    ) -> NodeId {
+        let node_id = self.create_node(node_type.clone(), value);
+        listener.on_node_added(node_id, &node_type);
         node_id
     }
 
@@ -405,6 +433,21 @@ impl PdfAstGraph {
         } else {
             false
         }
+    }
+
+    /// Adds an edge and emits an event to the provided listener.
+    pub fn add_edge_with_listener(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        edge_type: EdgeType,
+        listener: &mut dyn AstEventListener,
+    ) -> bool {
+        let added = self.add_edge(from, to, edge_type);
+        if added {
+            listener.on_edge_added(from, to, edge_type);
+        }
+        added
     }
 
     /// Returns the root node ID if one has been set.
@@ -720,6 +763,20 @@ impl PdfAstGraph {
             }
         }
         edges
+    }
+}
+
+struct CallbackVisitor<'a, F> {
+    callback: &'a mut F,
+}
+
+impl<'a, F> Visitor for CallbackVisitor<'a, F>
+where
+    F: FnMut(&AstNode),
+{
+    fn visit_node(&mut self, node: &AstNode) -> crate::visitor::VisitorAction {
+        (self.callback)(node);
+        crate::visitor::VisitorAction::Continue
     }
 }
 

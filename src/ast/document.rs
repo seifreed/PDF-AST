@@ -566,6 +566,35 @@ impl Default for PdfVersion {
     }
 }
 
+impl PdfDocument {
+    /// Returns a timeline view over incremental document revisions.
+    pub fn timeline(&self) -> Timeline<'_> {
+        Timeline::new(&self.revisions)
+    }
+
+    /// Walks incremental revisions in order.
+    pub fn walk_incrementals<F>(&self, mut f: F)
+    where
+        F: FnMut(&DocumentRevision),
+    {
+        for revision in &self.revisions {
+            f(revision);
+        }
+    }
+
+    /// Adds a revision and emits an event to the provided listener.
+    pub fn add_revision_with_listener(
+        &mut self,
+        revision: DocumentRevision,
+        listener: &mut dyn crate::events::AstEventListener,
+    ) {
+        self.revisions.push(revision);
+        if let Some(latest) = self.revisions.last() {
+            listener.on_incremental_applied(latest);
+        }
+    }
+}
+
 impl std::fmt::Display for PdfVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.major, self.minor)
@@ -581,6 +610,79 @@ pub struct DocumentRevision {
     pub modified_objects: Vec<ObjectId>,
     pub added_objects: Vec<ObjectId>,
     pub deleted_objects: Vec<ObjectId>,
+}
+
+/// Timeline view over document revisions.
+pub struct Timeline<'a> {
+    revisions: &'a [DocumentRevision],
+}
+
+impl<'a> Timeline<'a> {
+    pub fn new(revisions: &'a [DocumentRevision]) -> Self {
+        Self { revisions }
+    }
+
+    pub fn iter(&self) -> TimelineIter<'a> {
+        TimelineIter {
+            revisions: self.revisions,
+            index: 0,
+        }
+    }
+}
+
+pub struct TimelineIter<'a> {
+    revisions: &'a [DocumentRevision],
+    index: usize,
+}
+
+impl<'a> Iterator for TimelineIter<'a> {
+    type Item = TimelineStep<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.revisions.len() {
+            return None;
+        }
+        let current_index = self.index;
+        self.index += 1;
+        Some(TimelineStep {
+            revision: &self.revisions[current_index],
+            previous: self
+                .revisions
+                .get(current_index.saturating_sub(1))
+                .filter(|_| current_index > 0),
+        })
+    }
+}
+
+pub struct TimelineStep<'a> {
+    revision: &'a DocumentRevision,
+    previous: Option<&'a DocumentRevision>,
+}
+
+impl<'a> TimelineStep<'a> {
+    pub fn revision(&self) -> &'a DocumentRevision {
+        self.revision
+    }
+
+    /// Returns object-level changes for this revision.
+    pub fn nodes(&self) -> RevisionDiff<'a> {
+        RevisionDiff {
+            added: &self.revision.added_objects,
+            modified: &self.revision.modified_objects,
+            deleted: &self.revision.deleted_objects,
+        }
+    }
+
+    /// Returns object-level changes relative to the previous revision.
+    pub fn diff_from_previous(&self) -> Option<RevisionDiff<'a>> {
+        self.previous.map(|_| self.nodes())
+    }
+}
+
+pub struct RevisionDiff<'a> {
+    pub added: &'a [ObjectId],
+    pub modified: &'a [ObjectId],
+    pub deleted: &'a [ObjectId],
 }
 
 /// Names tree for various named destinations

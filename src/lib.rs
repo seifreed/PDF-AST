@@ -22,6 +22,8 @@ pub mod bindings;
 pub mod constants;
 /// Cryptographic operations for signatures and encryption.
 pub mod crypto;
+/// Event hooks for parser/AST instrumentation.
+pub mod events;
 /// Foreign Function Interface for C interoperability.
 pub mod ffi;
 /// Stream filters (compression, encoding, decoding).
@@ -42,6 +44,8 @@ pub mod security;
 pub mod serialization;
 /// Document transformation utilities.
 pub mod transform;
+/// Traversal helpers and walker traits.
+pub mod traversal;
 /// Core PDF data types (objects, arrays, dictionaries).
 pub mod types;
 /// Document validation and compliance checking.
@@ -66,6 +70,7 @@ pub use compression::{
     create_optimal_compressor, AdvancedCompressor, CompressionConfig, CompressionLevel,
     CompressionResult,
 };
+pub use events::AstEventListener;
 pub use forms::{
     count_fields_in_acroform, has_hybrid_forms, AcroFormStats, XfaDocument, XfaNode, XfaPacket,
     XfaScriptStats,
@@ -86,6 +91,7 @@ pub use security::{
     security_report_to_yaml, DigitalSignature, SecurityAnalyzer, SecurityInfo, SecurityReport,
 };
 pub use serialization::{GraphDeserializer, SerializableGraph};
+pub use traversal::{AstWalker, GraphWalker, TimelineWalker};
 pub use types::{
     ObjectId, PdfArray, PdfDictionary, PdfName, PdfReference, PdfStream, PdfString, PdfValue,
 };
