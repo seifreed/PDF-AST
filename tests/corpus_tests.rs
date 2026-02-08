@@ -3,8 +3,8 @@ use pdf_ast::types::PdfValue;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::BufReader;
-use std::path::{Path, PathBuf};
 use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize)]
 struct CorpusFile {
