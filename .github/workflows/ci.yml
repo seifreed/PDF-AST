@@ -30,6 +30,7 @@ jobs:
         uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable 2024-01-01
         with:
           toolchain: stable
+          components: llvm-tools-preview
           components: rustfmt
 
       - name: Run rustfmt check
@@ -89,8 +90,17 @@ jobs:
         with:
           shared-key: test-cache
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: seifreed/PDF-AST
 
   build:
     name: Build Release (${{ matrix.os }})
