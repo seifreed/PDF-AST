@@ -1,0 +1,730 @@
+use crate::ast::{AstNode, NodeId, NodeType};
+use crate::types::{ObjectId, PdfReference, PdfValue};
+use petgraph::graph::NodeIndex;
+use petgraph::visit::{Bfs, Dfs, EdgeRef};
+use petgraph::Graph;
+use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+
+#[derive(Debug, Clone)]
+pub struct PdfAstGraph {
+    graph: Graph<AstNode, EdgeType>,
+    node_map: HashMap<NodeId, NodeIndex>,
+    object_map: HashMap<ObjectId, NodeId>,
+    next_node_id: usize,
+    pub root: Option<NodeId>,
+    deterministic_ids: bool,
+    content_hash: HashMap<String, NodeId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EdgeType {
+    Child,
+    Reference,
+    Parent,
+    Resource,
+    Annotation,
+    Content,
+}
+
+#[derive(Debug, Clone)]
+pub struct EdgeInfo {
+    pub from: NodeId,
+    pub to: NodeId,
+    pub edge_type: EdgeType,
+}
+
+impl PdfAstGraph {
+    /// Creates a new empty PDF AST graph with sequential node IDs.
+    ///
+    /// # Returns
+    /// An empty `PdfAstGraph` ready for node insertion
+    pub fn new() -> Self {
+        PdfAstGraph {
+            graph: Graph::new(),
+            node_map: HashMap::new(),
+            object_map: HashMap::new(),
+            next_node_id: 0,
+            root: None,
+            deterministic_ids: false,
+            content_hash: HashMap::new(),
+        }
+    }
+
+    /// Creates a new PDF AST graph with content-based deterministic node IDs.
+    ///
+    /// Deterministic IDs are derived from node content, ensuring identical
+    /// content produces identical node IDs across multiple parses. This is
+    /// useful for diffing, testing, and reproducible builds.
+    ///
+    /// # Returns
+    /// An empty `PdfAstGraph` configured for deterministic node ID generation
+    pub fn new_with_deterministic_ids() -> Self {
+        PdfAstGraph {
+            graph: Graph::new(),
+            node_map: HashMap::new(),
+            object_map: HashMap::new(),
+            next_node_id: 0,
+            root: None,
+            deterministic_ids: true,
+            content_hash: HashMap::new(),
+        }
+    }
+
+    /// Enables or disables deterministic node ID generation.
+    ///
+    /// # Arguments
+    /// * `deterministic` - If true, node IDs are derived from content; if false, sequential IDs are used
+    ///
+    /// # Note
+    /// Disabling deterministic mode clears the internal content hash cache
+    pub fn set_deterministic_ids(&mut self, deterministic: bool) {
+        self.deterministic_ids = deterministic;
+        if !deterministic {
+            self.content_hash.clear();
+        }
+    }
+
+    /// Creates a new node in the graph with the specified type and value.
+    ///
+    /// # Arguments
+    /// * `node_type` - The semantic type of the node (Page, Catalog, Stream, etc.)
+    /// * `value` - The PDF value stored in this node
+    ///
+    /// # Returns
+    /// The unique `NodeId` assigned to the newly created node
+    pub fn create_node(&mut self, node_type: NodeType, value: PdfValue) -> NodeId {
+        let node_id = if self.deterministic_ids {
+            self.generate_deterministic_id(&node_type, &value)
+        } else {
+            let id = NodeId(self.next_node_id);
+            self.next_node_id += 1;
+            id
+        };
+
+        let node = AstNode::new(node_id, node_type.clone(), value);
+        let index = self.graph.add_node(node);
+        self.node_map.insert(node_id, index);
+
+        if let NodeType::Object(obj_id) = node_type {
+            self.object_map.insert(obj_id, node_id);
+        }
+
+        node_id
+    }
+
+    fn generate_deterministic_id(&mut self, node_type: &NodeType, value: &PdfValue) -> NodeId {
+        let content_hash = self.compute_content_hash(node_type, value);
+
+        // Check if we already have a node with this content
+        if let Some(&existing_id) = self.content_hash.get(&content_hash) {
+            return existing_id;
+        }
+
+        // Create a deterministic ID based on content
+        let mut hasher = DefaultHasher::new();
+        content_hash.hash(&mut hasher);
+        let hash_value = hasher.finish() as usize;
+
+        // Ensure uniqueness by checking existing IDs
+        let mut id_value = hash_value;
+        let mut node_id = NodeId(id_value);
+
+        while self.node_map.contains_key(&node_id) {
+            id_value = id_value.wrapping_add(1);
+            node_id = NodeId(id_value);
+        }
+
+        self.content_hash.insert(content_hash, node_id);
+
+        // Update next_node_id to maintain consistency
+        if id_value >= self.next_node_id {
+            self.next_node_id = id_value + 1;
+        }
+
+        node_id
+    }
+
+    fn compute_content_hash(&self, node_type: &NodeType, value: &PdfValue) -> String {
+        let mut hasher = DefaultHasher::new();
+
+        // Hash node type
+        format!("{:?}", node_type).hash(&mut hasher);
+
+        // Hash value content
+        self.hash_pdf_value(value, &mut hasher);
+
+        format!("{:x}", hasher.finish())
+    }
+
+    #[allow(clippy::only_used_in_recursion)]
+    fn hash_pdf_value(&self, value: &PdfValue, hasher: &mut DefaultHasher) {
+        match value {
+            PdfValue::Null => "null".hash(hasher),
+            PdfValue::Boolean(b) => b.hash(hasher),
+            PdfValue::Integer(i) => i.hash(hasher),
+            PdfValue::Real(r) => r.to_bits().hash(hasher),
+            PdfValue::String(s) => s.as_bytes().hash(hasher),
+            PdfValue::Name(n) => n.as_str().hash(hasher),
+            PdfValue::Array(arr) => {
+                arr.len().hash(hasher);
+                for item in arr {
+                    self.hash_pdf_value(item, hasher);
+                }
+            }
+            PdfValue::Dictionary(dict) => {
+                dict.len().hash(hasher);
+                // Sort keys for deterministic hashing
+                let mut keys: Vec<_> = dict.keys().collect();
+                keys.sort();
+                for key in keys {
+                    key.hash(hasher);
+                    if let Some(val) = dict.get(key.as_str()) {
+                        self.hash_pdf_value(val, hasher);
+                    }
+                }
+            }
+            PdfValue::Stream(stream) => {
+                self.hash_pdf_value(&PdfValue::Dictionary(stream.dict.clone()), hasher);
+                stream.data.len().hash(hasher);
+                if stream.data.len() < 1024 {
+                    // Hash small stream data
+                    let data_hash = stream.data.hash();
+                    data_hash.hash(hasher);
+                } else {
+                    // For large streams, use content-based hashing approach
+                    let data_hash = stream.data.hash();
+                    data_hash.hash(hasher);
+                }
+            }
+            PdfValue::Reference(r) => {
+                r.number().hash(hasher);
+                r.generation().hash(hasher);
+            }
+        }
+    }
+
+    /// Adds a pre-constructed node to the graph.
+    ///
+    /// # Arguments
+    /// * `node` - An `AstNode` with its ID, type, and value already set
+    ///
+    /// # Returns
+    /// The `NodeId` of the added node
+    pub fn add_node(&mut self, node: AstNode) -> NodeId {
+        let node_id = node.id;
+        let index = self.graph.add_node(node.clone());
+        self.node_map.insert(node_id, index);
+
+        if let NodeType::Object(obj_id) = &node.node_type {
+            self.object_map.insert(*obj_id, node_id);
+        }
+
+        if self.next_node_id <= node_id.0 {
+            self.next_node_id = node_id.0 + 1;
+        }
+
+        node_id
+    }
+
+    /// Retrieves an immutable reference to a node by its ID.
+    ///
+    /// # Arguments
+    /// * `node_id` - The unique identifier of the node
+    ///
+    /// # Returns
+    /// `Some(&AstNode)` if the node exists, `None` otherwise
+    pub fn get_node(&self, node_id: NodeId) -> Option<&AstNode> {
+        self.node_map
+            .get(&node_id)
+            .and_then(|&index| self.graph.node_weight(index))
+    }
+
+    /// Retrieves a mutable reference to a node by its ID.
+    ///
+    /// # Arguments
+    /// * `node_id` - The unique identifier of the node
+    ///
+    /// # Returns
+    /// `Some(&mut AstNode)` if the node exists, `None` otherwise
+    pub fn get_node_mut(&mut self, node_id: NodeId) -> Option<&mut AstNode> {
+        self.node_map
+            .get(&node_id)
+            .and_then(|&index| self.graph.node_weight_mut(index))
+    }
+
+    /// Retrieves a node by its PDF object ID.
+    ///
+    /// # Arguments
+    /// * `obj_id` - The PDF object identifier (e.g., "1 0 obj")
+    ///
+    /// # Returns
+    /// `Some(&AstNode)` if a node with this object ID exists, `None` otherwise
+    pub fn get_node_by_object(&self, obj_id: ObjectId) -> Option<&AstNode> {
+        self.object_map
+            .get(&obj_id)
+            .and_then(|&node_id| self.get_node(node_id))
+    }
+
+    /// Returns all nodes in the graph as a vector of references.
+    ///
+    /// # Returns
+    /// A vector containing immutable references to all nodes in the graph
+    pub fn get_all_nodes(&self) -> Vec<&AstNode> {
+        self.graph.node_weights().collect()
+    }
+
+    /// Returns all edges in the graph with their source, target, and type information.
+    ///
+    /// # Returns
+    /// A vector of `EdgeInfo` structs describing all edges in the graph
+    pub fn get_all_edges(&self) -> Vec<EdgeInfo> {
+        let mut edges = Vec::new();
+        let node_id_reverse_map: HashMap<NodeIndex, NodeId> = self
+            .node_map
+            .iter()
+            .map(|(&node_id, &index)| (index, node_id))
+            .collect();
+
+        for edge_ref in self.graph.edge_references() {
+            if let (Some(&from_id), Some(&to_id)) = (
+                node_id_reverse_map.get(&edge_ref.source()),
+                node_id_reverse_map.get(&edge_ref.target()),
+            ) {
+                edges.push(EdgeInfo {
+                    from: from_id,
+                    to: to_id,
+                    edge_type: *edge_ref.weight(),
+                });
+            }
+        }
+
+        edges
+    }
+
+    /// Returns the total number of nodes in the graph.
+    ///
+    /// # Returns
+    /// The count of nodes currently in the graph
+    pub fn node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    /// Returns the total number of edges in the graph.
+    ///
+    /// # Returns
+    /// The count of edges currently in the graph
+    pub fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
+
+    /// Detects whether the graph contains any cycles.
+    ///
+    /// A well-formed PDF should not have cycles in its object reference graph,
+    /// so this method can help detect malformed or potentially malicious documents.
+    ///
+    /// # Returns
+    /// `true` if at least one cycle is detected, `false` otherwise
+    pub fn is_cyclic(&self) -> bool {
+        use petgraph::visit::depth_first_search;
+        use petgraph::visit::DfsEvent;
+
+        let mut is_cyclic = false;
+        depth_first_search(
+            &self.graph,
+            self.graph.node_indices(),
+            |event| match event {
+                DfsEvent::BackEdge(..) => {
+                    is_cyclic = true;
+                    petgraph::visit::Control::Break(())
+                }
+                _ => petgraph::visit::Control::Continue,
+            },
+        );
+        is_cyclic
+    }
+
+    /// Sets the root node of the graph (typically the Catalog).
+    ///
+    /// # Arguments
+    /// * `root_id` - The `NodeId` to designate as the document root
+    pub fn set_root(&mut self, root_id: NodeId) {
+        self.root = Some(root_id);
+    }
+
+    /// Finds all nodes matching a specific node type.
+    ///
+    /// # Arguments
+    /// * `node_type` - The node type to search for (e.g., `NodeType::Page`, `NodeType::JavaScriptAction`)
+    ///
+    /// # Returns
+    /// A vector of `NodeId`s for all nodes matching the specified type
+    pub fn find_nodes_by_type(&self, node_type: NodeType) -> Vec<NodeId> {
+        self.graph
+            .node_weights()
+            .filter_map(|node| {
+                if std::mem::discriminant(&node.node_type) == std::mem::discriminant(&node_type) {
+                    Some(node.id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Adds a directed edge between two nodes in the graph.
+    ///
+    /// # Arguments
+    /// * `from` - The source node ID
+    /// * `to` - The target node ID
+    /// * `edge_type` - The semantic type of the relationship (Child, Reference, Parent, etc.)
+    ///
+    /// # Returns
+    /// `true` if the edge was successfully added, `false` if either node doesn't exist
+    pub fn add_edge(&mut self, from: NodeId, to: NodeId, edge_type: EdgeType) -> bool {
+        if let (Some(&from_idx), Some(&to_idx)) = (self.node_map.get(&from), self.node_map.get(&to))
+        {
+            self.graph.add_edge(from_idx, to_idx, edge_type);
+
+            match edge_type {
+                EdgeType::Child => {
+                    if let Some(from_node) = self.get_node_mut(from) {
+                        from_node.add_child(to);
+                    }
+                }
+                EdgeType::Reference => {
+                    if let Some(from_node) = self.get_node_mut(from) {
+                        from_node.add_reference(to);
+                    }
+                }
+                _ => {}
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Returns the root node ID if one has been set.
+    ///
+    /// # Returns
+    /// `Some(NodeId)` if a root exists, `None` otherwise
+    pub fn get_root(&self) -> Option<NodeId> {
+        self.root
+    }
+
+    /// Returns all child nodes of the specified node.
+    ///
+    /// # Arguments
+    /// * `node_id` - The parent node ID
+    ///
+    /// # Returns
+    /// A vector of `NodeId`s for all nodes connected via `EdgeType::Child` edges
+    pub fn get_children(&self, node_id: NodeId) -> Vec<NodeId> {
+        if let Some(&index) = self.node_map.get(&node_id) {
+            self.graph
+                .edges(index)
+                .filter_map(|edge| {
+                    if *edge.weight() == EdgeType::Child {
+                        self.graph.node_weight(edge.target()).map(|node| node.id)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Returns all nodes referenced by the specified node.
+    ///
+    /// # Arguments
+    /// * `node_id` - The referencing node ID
+    ///
+    /// # Returns
+    /// A vector of `NodeId`s for all nodes connected via `EdgeType::Reference` edges
+    pub fn get_references(&self, node_id: NodeId) -> Vec<NodeId> {
+        if let Some(&index) = self.node_map.get(&node_id) {
+            self.graph
+                .edges(index)
+                .filter_map(|edge| {
+                    if *edge.weight() == EdgeType::Reference {
+                        self.graph.node_weight(edge.target()).map(|node| node.id)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Resolves a PDF indirect reference to its corresponding AST node.
+    ///
+    /// # Arguments
+    /// * `reference` - A PDF indirect reference (e.g., "5 0 R")
+    ///
+    /// # Returns
+    /// `Some(&AstNode)` if the referenced object exists, `None` otherwise
+    pub fn resolve_reference(&self, reference: &PdfReference) -> Option<&AstNode> {
+        self.get_node_by_object(reference.id())
+    }
+
+    /// Performs a breadth-first traversal of the graph starting from the root node.
+    ///
+    /// # Arguments
+    /// * `visitor` - A closure called for each node during traversal
+    ///
+    /// # Note
+    /// Does nothing if no root node has been set
+    pub fn bfs_from_root<F>(&self, mut visitor: F)
+    where
+        F: FnMut(&AstNode),
+    {
+        if let Some(root_id) = self.root {
+            if let Some(&root_index) = self.node_map.get(&root_id) {
+                let mut bfs = Bfs::new(&self.graph, root_index);
+                while let Some(nx) = bfs.next(&self.graph) {
+                    if let Some(node) = self.graph.node_weight(nx) {
+                        visitor(node);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Performs a depth-first traversal of the graph starting from the root node.
+    ///
+    /// # Arguments
+    /// * `visitor` - A closure called for each node during traversal
+    ///
+    /// # Note
+    /// Does nothing if no root node has been set
+    pub fn dfs_from_root<F>(&self, mut visitor: F)
+    where
+        F: FnMut(&AstNode),
+    {
+        if let Some(root_id) = self.root {
+            if let Some(&root_index) = self.node_map.get(&root_id) {
+                let mut dfs = Dfs::new(&self.graph, root_index);
+                while let Some(nx) = dfs.next(&self.graph) {
+                    if let Some(node) = self.graph.node_weight(nx) {
+                        visitor(node);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Finds all nodes marked as containing errors during parsing.
+    ///
+    /// # Returns
+    /// A vector of `NodeId`s for nodes that encountered parse errors
+    pub fn find_error_nodes(&self) -> Vec<NodeId> {
+        self.graph
+            .node_weights()
+            .filter(|node| node.is_error())
+            .map(|node| node.id)
+            .collect()
+    }
+
+    pub fn get_graph(&self) -> &Graph<AstNode, EdgeType> {
+        &self.graph
+    }
+
+    // Missing methods that are used in the codebase
+    /// Checks whether a node with the given ID exists in the graph.
+    ///
+    /// # Arguments
+    /// * `node_id` - The node ID to check
+    ///
+    /// # Returns
+    /// `true` if the node exists, `false` otherwise
+    pub fn contains_node(&self, node_id: NodeId) -> bool {
+        self.node_map.contains_key(&node_id)
+    }
+
+    /// Removes a node and all its edges from the graph.
+    ///
+    /// # Arguments
+    /// * `node_id` - The node ID to remove
+    ///
+    /// # Returns
+    /// `true` if the node was removed, `false` if it didn't exist
+    pub fn remove_node(&mut self, node_id: NodeId) -> bool {
+        if let Some(index) = self.node_map.remove(&node_id) {
+            self.graph.remove_node(index);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn remove_edge(&mut self, from: NodeId, to: NodeId) -> bool {
+        if let (Some(&from_idx), Some(&to_idx)) = (self.node_map.get(&from), self.node_map.get(&to))
+        {
+            if let Some(edge_idx) = self.graph.find_edge(from_idx, to_idx) {
+                self.graph.remove_edge(edge_idx);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns the parent node of the specified node.
+    ///
+    /// # Arguments
+    /// * `node_id` - The child node ID
+    ///
+    /// # Returns
+    /// `Some(NodeId)` of the parent if connected via `EdgeType::Child`, `None` otherwise
+    pub fn get_parent(&self, node_id: NodeId) -> Option<NodeId> {
+        if let Some(&index) = self.node_map.get(&node_id) {
+            for edge in self
+                .graph
+                .edges_directed(index, petgraph::Direction::Incoming)
+            {
+                if *edge.weight() == EdgeType::Child {
+                    if let Some(parent_node) = self.graph.node_weight(edge.source()) {
+                        return Some(parent_node.id);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn get_nodes_by_type(&self, node_type: NodeType) -> Vec<NodeId> {
+        self.find_nodes_by_type(node_type)
+    }
+
+    pub fn get_object_id(&self, node_id: NodeId) -> Option<ObjectId> {
+        if let Some(node) = self.get_node(node_id) {
+            if let NodeType::Object(obj_id) = &node.node_type {
+                return Some(*obj_id);
+            }
+        }
+        None
+    }
+
+    pub fn node_indices(&self) -> Vec<NodeId> {
+        self.node_map.keys().copied().collect()
+    }
+
+    pub fn get_path_to_root(&self, node_id: NodeId) -> Vec<NodeId> {
+        let mut path = Vec::new();
+        let mut current = node_id;
+
+        while let Some(parent) = self.get_parent(current) {
+            path.push(current);
+            current = parent;
+        }
+        path.push(current); // Add root
+        path.reverse();
+        path
+    }
+
+    pub fn get_page_number(&self, node_id: NodeId) -> Option<usize> {
+        // Find the page node or its parent page
+        let mut current = node_id;
+        let mut page_node = None;
+
+        // Walk up the tree to find a Page node
+        loop {
+            if let Some(node) = self.get_node(current) {
+                if matches!(node.node_type, NodeType::Page) {
+                    page_node = Some(current);
+                    break;
+                }
+            }
+
+            if let Some(parent) = self.get_parent(current) {
+                current = parent;
+            } else {
+                break;
+            }
+        }
+
+        // If we found a page node, count its position among siblings
+        if let Some(page_id) = page_node {
+            // Find the Pages parent
+            if let Some(parent_id) = self.get_parent(page_id) {
+                let siblings = self.get_children(parent_id);
+                for (index, sibling) in siblings.iter().enumerate() {
+                    if *sibling == page_id {
+                        return Some(index + 1); // Page numbers are 1-indexed
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn raw_edges(&self) -> Vec<EdgeInfo> {
+        self.get_all_edges()
+    }
+
+    /// Calculates the maximum depth of the graph from the root node.
+    ///
+    /// # Returns
+    /// The longest path from root to any leaf node, or 0 if no root is set
+    pub fn get_max_depth(&self) -> usize {
+        let mut max_depth = 0;
+        if let Some(root_id) = self.root {
+            max_depth = self.calculate_depth(root_id, 0);
+        }
+        max_depth
+    }
+
+    fn calculate_depth(&self, node_id: NodeId, current_depth: usize) -> usize {
+        let children = self.get_children(node_id);
+        if children.is_empty() {
+            current_depth
+        } else {
+            children
+                .iter()
+                .map(|&child| self.calculate_depth(child, current_depth + 1))
+                .max()
+                .unwrap_or(current_depth)
+        }
+    }
+
+    pub fn next_node_id(&mut self) -> NodeId {
+        let id = NodeId(self.next_node_id);
+        self.next_node_id += 1;
+        id
+    }
+
+    pub fn get_edges_from(&self, node_id: NodeId) -> Vec<EdgeInfo> {
+        let mut edges = Vec::new();
+        if let Some(&index) = self.node_map.get(&node_id) {
+            let node_id_reverse_map: HashMap<NodeIndex, NodeId> = self
+                .node_map
+                .iter()
+                .map(|(&node_id, &index)| (index, node_id))
+                .collect();
+
+            for edge in self.graph.edges(index) {
+                if let Some(&target_id) = node_id_reverse_map.get(&edge.target()) {
+                    edges.push(EdgeInfo {
+                        from: node_id,
+                        to: target_id,
+                        edge_type: *edge.weight(),
+                    });
+                }
+            }
+        }
+        edges
+    }
+}
+
+impl Default for PdfAstGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}

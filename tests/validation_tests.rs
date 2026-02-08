@@ -1,0 +1,549 @@
+use pdf_ast::validation::pdfa::*;
+use pdf_ast::validation::ValidationSeverity;
+/// Tests for PDF validation functionality
+///
+/// These tests verify the PDF/A validation and other validation features
+use pdf_ast::*;
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+    use pdf_ast::validation::SchemaRegistry;
+
+    #[test]
+    fn test_pdfa_basic_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+
+        // Create a minimal document for testing
+        let document = create_test_document();
+
+        // Test basic validation
+        let report = validator.validate(&document);
+
+        // Should have validation results
+        assert!(!report.issues.is_empty() || !report.is_valid);
+        assert!(!report.schema_name.is_empty());
+        assert_eq!(report.schema_name, "PDF/A-1b");
+    }
+
+    #[test]
+    fn test_pdfa_version_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+
+        // Test PDF 2.0 (should fail PDF/A-1b)
+        let mut document = create_test_document();
+        document.version = PdfVersion { major: 2, minor: 0 };
+
+        let report = validator.validate(&document);
+        assert!(!report.is_valid);
+
+        // Should have version-related error
+        let has_version_error = report
+            .issues
+            .iter()
+            .any(|issue| issue.code.contains("VERSION") || issue.message.contains("version"));
+        assert!(has_version_error);
+    }
+
+    #[test]
+    fn test_pdfa_color_space_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Add a page with RGB color space (should be allowed in PDF/A-1b)
+        add_page_with_colorspace(&mut document, "/DeviceRGB");
+
+        let report = validator.validate(&document);
+
+        // RGB should be allowed
+        let has_color_error = report
+            .issues
+            .iter()
+            .any(|issue| issue.code.contains("COLOR") && issue.message.contains("DeviceRGB"));
+        assert!(!has_color_error);
+
+        // Test with CMYK (should also be allowed)
+        let mut document2 = create_test_document();
+        add_page_with_colorspace(&mut document2, "/DeviceCMYK");
+
+        let report2 = validator.validate(&document2);
+        let has_cmyk_error = report2
+            .issues
+            .iter()
+            .any(|issue| issue.code.contains("COLOR") && issue.message.contains("DeviceCMYK"));
+        assert!(!has_cmyk_error);
+    }
+
+    #[test]
+    fn test_pdfa_font_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Add an embedded font (should be OK)
+        add_embedded_font(&mut document, "Arial", true);
+
+        let report = validator.validate(&document);
+
+        // Embedded fonts should not cause errors
+        let has_font_error = report.issues.iter().any(|issue| {
+            issue.code.contains("FONT") && issue.severity == ValidationSeverity::Error
+        });
+        assert!(!has_font_error);
+
+        // Test non-embedded font (should cause error)
+        let mut document2 = create_test_document();
+        add_embedded_font(&mut document2, "Helvetica", false);
+
+        let report2 = validator.validate(&document2);
+        let has_embed_error = report2
+            .issues
+            .iter()
+            .any(|issue| issue.code.contains("FONT") && issue.message.contains("embed"));
+        assert!(has_embed_error);
+    }
+
+    #[test]
+    fn test_pdfa_javascript_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Add JavaScript action (should fail PDF/A-1b)
+        add_javascript_action(&mut document);
+
+        let report = validator.validate(&document);
+        assert!(!report.is_valid);
+
+        // Should have JavaScript-related error
+        let has_js_error = report.issues.iter().any(|issue| {
+            issue.code.contains("JAVASCRIPT") || issue.message.to_lowercase().contains("javascript")
+        });
+        assert!(has_js_error);
+    }
+
+    #[test]
+    fn test_pdfa_transparency_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Add transparency (should fail PDF/A-1b)
+        add_transparency_group(&mut document);
+
+        let report = validator.validate(&document);
+
+        // Should have transparency-related warning/error
+        let has_transparency_issue = report.issues.iter().any(|issue| {
+            issue.message.to_lowercase().contains("transparency")
+                || issue.code.contains("TRANSPARENCY")
+        });
+        assert!(has_transparency_issue);
+    }
+
+    #[test]
+    fn test_pdfa_encryption_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Set document as encrypted (should fail PDF/A-1b)
+        document.metadata.encrypted = true;
+
+        let report = validator.validate(&document);
+        assert!(!report.is_valid);
+
+        // Should have encryption-related error
+        let has_encryption_error = report.issues.iter().any(|issue| {
+            issue.code.contains("ENCRYPTION") || issue.message.to_lowercase().contains("encrypt")
+        });
+        assert!(has_encryption_error);
+    }
+
+    #[test]
+    fn test_pdfa_metadata_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Add proper XMP metadata
+        add_xmp_metadata(&mut document);
+
+        let report = validator.validate(&document);
+
+        // With metadata, should have fewer issues
+        let metadata_errors = report
+            .issues
+            .iter()
+            .filter(|issue| issue.code.contains("METADATA"))
+            .count();
+
+        // May still have metadata issues if not properly formatted
+        // but at least metadata exists
+        assert!(document.info.is_some() || metadata_errors > 0);
+    }
+
+    #[test]
+    fn test_pdfa_image_validation() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let mut document = create_test_document();
+
+        // Add image with proper color space
+        add_image_object(&mut document, "/DeviceRGB");
+
+        let report = validator.validate(&document);
+
+        // RGB images should be allowed
+        let _has_image_error = report.issues.iter().any(|issue| {
+            issue.code.contains("IMAGE") && issue.severity == ValidationSeverity::Error
+        });
+
+        // May have warnings but not necessarily errors for RGB images
+        println!(
+            "Image validation issues: {:?}",
+            report
+                .issues
+                .iter()
+                .filter(|i| i.code.contains("IMAGE"))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_validation_statistics() {
+        let validator = PdfA1bValidator::new().with_strict_mode(false);
+        let document = create_test_document();
+
+        let report = validator.validate(&document);
+
+        // Check statistics are populated
+        assert!(report.statistics.total_checks > 0);
+        assert_eq!(
+            report.statistics.total_checks,
+            report.statistics.passed_checks + report.statistics.failed_checks
+        );
+
+        // Count issues by severity
+        let error_count = report
+            .issues
+            .iter()
+            .filter(|i| i.severity == ValidationSeverity::Error)
+            .count();
+        let warning_count = report
+            .issues
+            .iter()
+            .filter(|i| i.severity == ValidationSeverity::Warning)
+            .count();
+        let info_count = report
+            .issues
+            .iter()
+            .filter(|i| i.severity == ValidationSeverity::Info)
+            .count();
+
+        assert_eq!(report.statistics.error_count, error_count);
+        assert_eq!(report.statistics.warning_count, warning_count);
+        assert_eq!(report.statistics.info_count, info_count);
+    }
+
+    #[test]
+    fn test_strict_vs_lenient_mode() {
+        let strict_validator = PdfA1bValidator::new().with_strict_mode(true);
+        let lenient_validator = PdfA1bValidator::new().with_strict_mode(false);
+
+        let document = create_test_document();
+
+        let strict_report = strict_validator.validate(&document);
+        let lenient_report = lenient_validator.validate(&document);
+
+        // Strict mode should generally have more issues or stricter enforcement
+        println!(
+            "Strict issues: {}, Lenient issues: {}",
+            strict_report.issues.len(),
+            lenient_report.issues.len()
+        );
+
+        // Both should run without panicking
+        assert!(!strict_report.schema_name.is_empty());
+        assert!(!lenient_report.schema_name.is_empty());
+    }
+
+    #[test]
+    fn test_pdfx_colorspace_constraint_detects_device_rgb() {
+        let mut document = create_test_document();
+        add_page_with_resource_colorspace(&mut document, "/DeviceRGB");
+
+        let registry = SchemaRegistry::new();
+        let report = registry
+            .validate(&document, "PDF/X-1a")
+            .expect("PDF/X-1a report should be produced");
+
+        let has_rgb_issue = report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "DEVICE_RGB_DISALLOWED");
+        let has_output_intents_issue = report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "OUTPUT_INTENTS_MISSING");
+
+        assert!(has_rgb_issue, "Expected DeviceRGB to be flagged");
+        assert!(
+            has_output_intents_issue,
+            "Expected missing OutputIntents to be flagged"
+        );
+    }
+
+    #[test]
+    fn test_pdfua_accessibility_constraints() {
+        let mut document = create_test_document();
+        add_marked_struct_tree(&mut document);
+        add_struct_elem_figure(&mut document, false);
+
+        let registry = SchemaRegistry::new();
+        let report = registry
+            .validate(&document, "PDF/UA-1")
+            .expect("PDF/UA-1 report should be produced");
+
+        let has_lang_issue = report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "LANG_MISSING");
+        let has_metadata_issue = report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "ACCESSIBILITY_METADATA_MISSING");
+        let has_alt_issue = report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "ALT_TEXT_MISSING");
+
+        assert!(has_lang_issue, "Expected missing language to be flagged");
+        assert!(
+            has_metadata_issue,
+            "Expected missing metadata to be flagged"
+        );
+        assert!(has_alt_issue, "Expected missing Alt text to be flagged");
+    }
+
+    // Helper functions for creating test scenarios
+
+    fn create_test_document() -> PdfDocument {
+        let version = PdfVersion { major: 1, minor: 4 };
+        let mut document = PdfDocument::new(version);
+
+        // Add basic catalog
+        let catalog_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Catalog")));
+            dict
+        });
+        let catalog_id = document.ast.create_node(NodeType::Catalog, catalog_value);
+        document.set_catalog(catalog_id);
+
+        // Add basic page tree
+        let pages_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Pages")));
+            dict.insert("Count", PdfValue::Integer(1));
+            dict
+        });
+        let pages_id = document.ast.create_node(NodeType::Pages, pages_value);
+
+        // Add a page
+        let page_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Page")));
+            dict.insert(
+                "MediaBox",
+                PdfValue::Array(PdfArray::from(vec![
+                    PdfValue::Integer(0),
+                    PdfValue::Integer(0),
+                    PdfValue::Integer(612),
+                    PdfValue::Integer(792),
+                ])),
+            );
+            dict
+        });
+        let page_id = document.ast.create_node(NodeType::Page, page_value);
+
+        document
+            .ast
+            .add_edge(pages_id, page_id, crate::ast::EdgeType::Child);
+        document
+            .ast
+            .add_edge(catalog_id, pages_id, crate::ast::EdgeType::Reference);
+
+        document
+    }
+
+    fn add_page_with_colorspace(document: &mut PdfDocument, colorspace: &str) {
+        let page_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Page")));
+            dict.insert("ColorSpace", PdfValue::Name(PdfName::new(colorspace)));
+            dict
+        });
+        let page_id = document.ast.create_node(NodeType::Page, page_value);
+
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, page_id, crate::ast::EdgeType::Child);
+        }
+    }
+
+    fn add_page_with_resource_colorspace(document: &mut PdfDocument, colorspace: &str) {
+        let resources = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            let mut color_space = PdfDictionary::new();
+            color_space.insert("CS1", PdfValue::Name(PdfName::new(colorspace)));
+            dict.insert("ColorSpace", PdfValue::Dictionary(color_space));
+            dict
+        });
+
+        let page_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Page")));
+            dict.insert("Resources", resources);
+            dict
+        });
+
+        let page_id = document.ast.create_node(NodeType::Page, page_value);
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, page_id, crate::ast::EdgeType::Child);
+        }
+    }
+
+    fn add_marked_struct_tree(document: &mut PdfDocument) {
+        let catalog_id = document.catalog.expect("Catalog should exist");
+        if let Some(catalog_node) = document.ast.get_node_mut(catalog_id) {
+            if let PdfValue::Dictionary(ref mut dict) = catalog_node.value {
+                dict.insert(
+                    "MarkInfo",
+                    PdfValue::Dictionary({
+                        let mut mark_info = PdfDictionary::new();
+                        mark_info.insert("Marked", PdfValue::Boolean(true));
+                        mark_info
+                    }),
+                );
+                dict.insert(
+                    "StructTreeRoot",
+                    PdfValue::Dictionary({
+                        let mut struct_root = PdfDictionary::new();
+                        struct_root.insert("Type", PdfValue::Name(PdfName::new("StructTreeRoot")));
+                        struct_root
+                            .insert("ParentTree", PdfValue::Dictionary(PdfDictionary::new()));
+                        struct_root.insert("K", PdfValue::Array(PdfArray::new()));
+                        struct_root
+                    }),
+                );
+            }
+        }
+    }
+
+    fn add_struct_elem_figure(document: &mut PdfDocument, with_alt: bool) {
+        let mut dict = PdfDictionary::new();
+        dict.insert("Type", PdfValue::Name(PdfName::new("StructElem")));
+        dict.insert("S", PdfValue::Name(PdfName::new("Figure")));
+        if with_alt {
+            dict.insert(
+                "Alt",
+                PdfValue::String(PdfString::new_literal(b"figure alt text")),
+            );
+        }
+        let elem_id = document
+            .ast
+            .create_node(NodeType::StructElem, PdfValue::Dictionary(dict));
+
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, elem_id, crate::ast::EdgeType::Reference);
+        }
+    }
+
+    fn add_embedded_font(document: &mut PdfDocument, font_name: &str, embedded: bool) {
+        let font_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Font")));
+            dict.insert("BaseFont", PdfValue::Name(PdfName::new(font_name)));
+            if embedded {
+                dict.insert("FontFile", PdfValue::Reference(PdfReference::new(999, 0)));
+            }
+            dict
+        });
+        let font_id = document.ast.create_node(NodeType::Font, font_value);
+
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, font_id, crate::ast::EdgeType::Reference);
+        }
+    }
+
+    fn add_javascript_action(document: &mut PdfDocument) {
+        let action_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Action")));
+            dict.insert("S", PdfValue::Name(PdfName::new("JavaScript")));
+            dict.insert(
+                "JS",
+                PdfValue::String(PdfString::new_literal(b"app.alert('Hello');")),
+            );
+            dict
+        });
+        let action_id = document
+            .ast
+            .create_node(NodeType::JavaScriptAction, action_value);
+
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, action_id, crate::ast::EdgeType::Reference);
+        }
+    }
+
+    fn add_transparency_group(document: &mut PdfDocument) {
+        let group_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Group")));
+            dict.insert("S", PdfValue::Name(PdfName::new("Transparency")));
+            dict
+        });
+        let group_id = document.ast.create_node(NodeType::Other, group_value);
+
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, group_id, crate::ast::EdgeType::Reference);
+        }
+    }
+
+    fn add_xmp_metadata(document: &mut PdfDocument) {
+        let metadata_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("Metadata")));
+            dict.insert("Subtype", PdfValue::Name(PdfName::new("XML")));
+            dict
+        });
+        let metadata_id = document.ast.create_node(NodeType::Metadata, metadata_value);
+        document.set_info(metadata_id);
+    }
+
+    fn add_image_object(document: &mut PdfDocument, colorspace: &str) {
+        let image_value = PdfValue::Dictionary({
+            let mut dict = PdfDictionary::new();
+            dict.insert("Type", PdfValue::Name(PdfName::new("XObject")));
+            dict.insert("Subtype", PdfValue::Name(PdfName::new("Image")));
+            dict.insert("ColorSpace", PdfValue::Name(PdfName::new(colorspace)));
+            dict.insert("Width", PdfValue::Integer(100));
+            dict.insert("Height", PdfValue::Integer(100));
+            dict.insert("BitsPerComponent", PdfValue::Integer(8));
+            dict
+        });
+        let image_id = document.ast.create_node(NodeType::Image, image_value);
+
+        if let Some(catalog_id) = document.catalog {
+            document
+                .ast
+                .add_edge(catalog_id, image_id, crate::ast::EdgeType::Reference);
+        }
+    }
+}

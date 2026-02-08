@@ -1,0 +1,208 @@
+pub mod accessibility;
+pub mod cmap;
+pub mod colorspace;
+pub mod content_analyzer;
+pub mod content_operands;
+pub mod content_stream;
+pub mod document_parser;
+pub mod extgstate;
+pub mod functions;
+pub mod lazy_stream;
+pub mod lexer;
+pub mod names_tree;
+pub mod object_parser;
+pub mod ocg;
+pub mod outlines;
+pub mod output_intents;
+pub mod page_tree;
+pub mod pdf_file;
+pub mod reference_resolver;
+pub mod struct_tree;
+pub mod text_extraction;
+pub mod xref;
+
+use crate::ast::{AstError, AstResult, PdfDocument};
+use crate::performance::PerformanceLimits;
+use crate::types::PdfValue;
+use std::io::{BufRead, Read, Seek};
+
+#[allow(dead_code)]
+pub struct PdfParser {
+    tolerant: bool,
+    max_depth: usize,
+    max_errors: usize,
+    limits: PerformanceLimits,
+}
+
+impl PdfParser {
+    /// Creates a new tolerant PDF parser with default settings.
+    ///
+    /// Default configuration:
+    /// - Tolerant mode enabled (attempts to parse malformed PDFs)
+    /// - Maximum nesting depth: 100
+    /// - Maximum errors before abort: 1000
+    /// - Default performance limits
+    ///
+    /// # Returns
+    /// A new `PdfParser` configured for tolerant parsing
+    pub fn new() -> Self {
+        PdfParser {
+            tolerant: true,
+            max_depth: 100,
+            max_errors: 1000,
+            limits: PerformanceLimits::default(),
+        }
+    }
+
+    /// Creates a strict PDF parser that rejects malformed documents.
+    ///
+    /// Strict configuration:
+    /// - Tolerant mode disabled (fails on spec violations)
+    /// - Maximum nesting depth: 100
+    /// - No error tolerance (max_errors: 0)
+    /// - Default performance limits
+    ///
+    /// # Returns
+    /// A new `PdfParser` configured for strict parsing
+    pub fn strict() -> Self {
+        PdfParser {
+            tolerant: false,
+            max_depth: 100,
+            max_errors: 0,
+            limits: PerformanceLimits::default(),
+        }
+    }
+
+    /// Sets the tolerance mode for parsing.
+    ///
+    /// # Arguments
+    /// * `tolerant` - If true, attempts to parse malformed PDFs; if false, strictly follows PDF spec
+    ///
+    /// # Returns
+    /// Self for method chaining
+    pub fn with_tolerance(mut self, tolerant: bool) -> Self {
+        self.tolerant = tolerant;
+        self
+    }
+
+    /// Sets the maximum nesting depth for PDF objects.
+    ///
+    /// # Arguments
+    /// * `depth` - Maximum allowed nesting level (prevents stack overflow from deeply nested structures)
+    ///
+    /// # Returns
+    /// Self for method chaining
+    pub fn with_max_depth(mut self, depth: usize) -> Self {
+        self.max_depth = depth;
+        self
+    }
+
+    /// Sets performance limits for parsing operations.
+    ///
+    /// # Arguments
+    /// * `limits` - Performance limits including timeouts and resource constraints
+    ///
+    /// # Returns
+    /// Self for method chaining
+    pub fn with_limits(mut self, limits: PerformanceLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Parses a PDF document from a reader.
+    ///
+    /// # Arguments
+    /// * `reader` - A reader implementing Read, Seek, and BufRead (e.g., File, Cursor)
+    ///
+    /// # Returns
+    /// A parsed `PdfDocument` with populated AST graph
+    ///
+    /// # Errors
+    /// Returns `AstError::ParseError` if the PDF cannot be parsed
+    pub fn parse<R: Read + Seek + BufRead>(&self, reader: R) -> AstResult<PdfDocument> {
+        let parser =
+            document_parser::DocumentParser::new(reader, self.tolerant, self.limits.clone());
+        parser.parse()
+    }
+
+    /// Parses a PDF document from a byte slice.
+    ///
+    /// # Arguments
+    /// * `data` - Raw PDF file bytes
+    ///
+    /// # Returns
+    /// A parsed `PdfDocument` with populated AST graph
+    ///
+    /// # Errors
+    /// Returns `AstError::ParseError` if the PDF is malformed
+    pub fn parse_bytes(&self, data: &[u8]) -> AstResult<PdfDocument> {
+        use std::io::Cursor;
+        let cursor = Cursor::new(data);
+        self.parse(cursor)
+    }
+
+    /// Parses a single PDF value from bytes.
+    ///
+    /// # Arguments
+    /// * `input` - Byte slice containing a PDF value (number, string, array, dictionary, etc.)
+    ///
+    /// # Returns
+    /// The parsed `PdfValue`
+    ///
+    /// # Errors
+    /// Returns `AstError::ParseError` if the value cannot be parsed
+    pub fn parse_value(&self, input: &[u8]) -> AstResult<PdfValue> {
+        object_parser::parse_value(input)
+            .map(|(_, value)| value)
+            .map_err(|e| AstError::ParseError(format!("{:?}", e)))
+    }
+
+    /// Parses a PDF object from bytes.
+    ///
+    /// # Arguments
+    /// * `input` - Byte slice containing a PDF object
+    ///
+    /// # Returns
+    /// The parsed `PdfValue`
+    ///
+    /// # Errors
+    /// Returns `AstError::ParseError` if the object cannot be parsed
+    pub fn parse_object(&self, input: &[u8]) -> AstResult<PdfValue> {
+        // For now, delegate to parse_value
+        self.parse_value(input)
+    }
+
+    /// Parses multiple consecutive PDF objects from bytes.
+    ///
+    /// # Arguments
+    /// * `input` - Byte slice containing multiple PDF objects
+    ///
+    /// # Returns
+    /// A vector of parsed `PdfValue` objects
+    ///
+    /// # Errors
+    /// Returns `AstError` if parsing fails catastrophically (partial results may still be returned)
+    pub fn parse_objects(&self, input: &[u8]) -> AstResult<Vec<PdfValue>> {
+        // Parse multiple objects from input
+        let mut objects = Vec::new();
+        let mut remaining = input;
+
+        while !remaining.is_empty() {
+            match object_parser::parse_value(remaining) {
+                Ok((rest, value)) => {
+                    objects.push(value);
+                    remaining = rest;
+                }
+                Err(_) => break,
+            }
+        }
+
+        Ok(objects)
+    }
+}
+
+impl Default for PdfParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}

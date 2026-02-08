@@ -1,0 +1,62 @@
+{
+  "name": "pdf-ast",
+  "version": "0.1.0",
+  "description": "Universal AST library for PDF documents based on ISO 32000-2",
+  "main": "index.node",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics --features javascript",
+    "build-release": "cargo-cp-artifact -nc index.node -- cargo build --release --message-format=json-render-diagnostics --features javascript",
+    "install": "npm run build-release",
+    "test": "node test/test.js",
+    "bench": "node benchmark/bench.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pdf-ast/pdf-ast.git"
+  },
+  "keywords": [
+    "pdf",
+    "ast",
+    "document",
+    "parsing",
+    "analysis",
+    "iso32000",
+    "pdf2.0",
+    "validation",
+    "security",
+    "malware",
+    "forensics",
+    "document-processing"
+  ],
+  "author": "PDF-AST Team <contact@pdf-ast.org>",
+  "license": "(MIT OR Apache-2.0)",
+  "bugs": {
+    "url": "https://github.com/pdf-ast/pdf-ast/issues"
+  },
+  "homepage": "https://github.com/pdf-ast/pdf-ast#readme",
+  "devDependencies": {
+    "cargo-cp-artifact": "^0.1"
+  },
+  "optionalDependencies": {
+    "@types/node": "^18.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "index.node",
+    "index.d.ts",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

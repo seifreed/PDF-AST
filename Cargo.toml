@@ -1,0 +1,133 @@
+[package]
+name = "pdf-ast"
+version = "0.1.0"
+edition = "2021"
+authors = ["Marc Rivero <mriverolopez@gmail.com>"]
+description = "Universal AST for PDF based on ISO 32000-2"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/seifreed/PDF-AST"
+homepage = "https://github.com/seifreed/PDF-AST"
+keywords = ["pdf", "ast", "security", "malware", "parsing"]
+categories = ["parsing", "data-structures"]
+
+[dependencies]
+# Core dependencies
+thiserror = "1.0"
+anyhow = "1.0"
+indexmap = "2.0"
+petgraph = "0.6"
+
+# Parsing
+nom = "7.1"
+memchr = "2.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_cbor = "0.11"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Compression filters
+flate2 = "1.0"
+lzw = "0.10"
+
+# Image filters
+jpeg-decoder = "0.3"
+png = "0.17"
+
+# CCITT fax decoding (for CCITT filter)
+tiff = "0.9"
+
+# JBIG2 (basic support - would need specialized library)
+# jbig2dec-rs = "0.1"  # Not available, would need custom implementation
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Async support (for lazy loading and streaming)
+tokio = { version = "1.35", features = ["full"], optional = true }
+async-trait = { version = "0.1", optional = true }
+
+# Performance optimizations
+rayon = { version = "1.8", optional = true }
+parking_lot = "0.12"
+dashmap = "5.5"
+bytes = "1.5"
+
+# Cryptographic support
+openssl = { version = "0.10", optional = true }
+ring = { version = "0.17", optional = true }
+x509-parser = { version = "0.16", optional = true }
+der-parser = { version = "9.0", optional = true }
+cms = { version = "0.2", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"], optional = true }
+
+# Extended format support
+# jbig2 = { version = "0.1", optional = true }  # Placeholder - would need real implementation
+quick-xml = "0.31"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Language bindings
+pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
+neon = { version = "0.10", optional = true }
+
+# System interface
+libc = "0.2"
+
+# Error recovery
+regex = "1.10"
+rand = "0.8"
+md5 = "0.7"
+sha2 = "0.10"
+sha1 = "0.10"
+
+[dev-dependencies]
+criterion = "0.5"
+pretty_assertions = "1.4"
+proptest = "1.4"
+sha2 = "0.10"
+hex = "0.4"
+
+[features]
+default = ["parallel", "crypto"]
+async = ["tokio", "async-trait"]
+crypto = ["openssl", "ring", "x509-parser", "der-parser", "cms", "reqwest"]
+# extended = ["jbig2"]
+parallel = ["rayon"]
+python = ["pyo3"]
+javascript = ["neon"]
+bindings = ["python", "javascript"]
+streaming = ["async", "tokio", "async-trait"]
+full = ["async", "crypto", "parallel", "bindings", "streaming"]
+ring = ["dep:ring"]
+
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+[[bin]]
+name = "debug_ast"
+path = "src/bin/debug_ast.rs"
+
+[[bin]]
+name = "pdf-ast"
+path = "src/bin/pdf-ast.rs"
+
+[[bin]]
+name = "pdf-ast-simple"
+path = "src/bin/pdf-ast-simple.rs"
+
+[[bin]]
+name = "pdf-fuzz"
+path = "src/bin/pdf-fuzz.rs"
+
+[[bench]]
+name = "parse_bench"
+harness = false

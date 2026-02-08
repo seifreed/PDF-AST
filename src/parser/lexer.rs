@@ -1,0 +1,197 @@
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_until, take_while, take_while1},
+    character::complete::{char, digit1, multispace0, multispace1, one_of},
+    combinator::{map, map_res, opt, recognize, value},
+    multi::many0,
+    sequence::{delimited, pair, preceded, tuple},
+    IResult,
+};
+
+pub fn skip_whitespace(input: &[u8]) -> IResult<&[u8], ()> {
+    value((), multispace0)(input)
+}
+
+pub fn skip_whitespace_and_comments(input: &[u8]) -> IResult<&[u8], ()> {
+    value((), many0(alt((value((), multispace1), value((), comment)))))(input)
+}
+
+pub fn comment(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    preceded(
+        char('%'),
+        alt((take_until("\n"), take_until("\r"), nom::combinator::rest)),
+    )(input)
+}
+
+pub fn pdf_header(input: &[u8]) -> IResult<&[u8], (u8, u8)> {
+    let (input, _) = tag(b"%PDF-")(input)?;
+    let (input, major) = map_res(digit1, |s: &[u8]| {
+        std::str::from_utf8(s).unwrap().parse::<u8>()
+    })(input)?;
+    let (input, _) = char('.')(input)?;
+    let (input, minor) = map_res(digit1, |s: &[u8]| {
+        std::str::from_utf8(s).unwrap().parse::<u8>()
+    })(input)?;
+    Ok((input, (major, minor)))
+}
+
+pub fn pdf_eof(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    tag(b"%%EOF")(input)
+}
+
+pub fn is_whitespace(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | b'\r' | b'\x0C' | b'\0')
+}
+
+pub fn is_delimiter(c: u8) -> bool {
+    matches!(
+        c,
+        b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
+    )
+}
+
+pub fn is_regular_char(c: u8) -> bool {
+    !is_whitespace(c) && !is_delimiter(c)
+}
+
+pub fn regular_chars(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    take_while1(is_regular_char)(input)
+}
+
+pub fn keyword(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    alt((
+        tag(b"true"),
+        tag(b"false"),
+        tag(b"null"),
+        tag(b"obj"),
+        tag(b"endobj"),
+        tag(b"stream"),
+        tag(b"endstream"),
+        tag(b"xref"),
+        tag(b"startxref"),
+        tag(b"trailer"),
+        tag(b"R"),
+        tag(b"n"),
+        tag(b"f"),
+    ))(input)
+}
+
+pub fn integer(input: &[u8]) -> IResult<&[u8], i64> {
+    map_res(recognize(pair(opt(one_of("+-")), digit1)), |s: &[u8]| {
+        std::str::from_utf8(s).unwrap().parse::<i64>()
+    })(input)
+}
+
+pub fn real(input: &[u8]) -> IResult<&[u8], f64> {
+    map_res(
+        recognize(tuple((
+            opt(one_of("+-")),
+            alt((
+                recognize(tuple((digit1, char('.'), opt(digit1)))),
+                recognize(tuple((opt(digit1), char('.'), digit1))),
+            )),
+        ))),
+        |s: &[u8]| std::str::from_utf8(s).unwrap().parse::<f64>(),
+    )(input)
+}
+
+pub fn hex_string(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    delimited(
+        char('<'),
+        map(
+            take_while(|c: u8| c.is_ascii_hexdigit() || is_whitespace(c)),
+            |hex: &[u8]| {
+                let hex_str: String = hex
+                    .iter()
+                    .filter(|&&c| !is_whitespace(c))
+                    .map(|&c| c as char)
+                    .collect();
+
+                let mut result = Vec::new();
+                let mut chars = hex_str.chars();
+
+                while let Some(c1) = chars.next() {
+                    let c2 = chars.next().unwrap_or('0');
+                    if let Ok(byte) = u8::from_str_radix(&format!("{}{}", c1, c2), 16) {
+                        result.push(byte);
+                    }
+                }
+
+                result
+            },
+        ),
+        char('>'),
+    )(input)
+}
+
+pub fn literal_string(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    delimited(
+        char('('),
+        map(
+            many0(alt((
+                preceded(char('\\'), escape_sequence),
+                map(take_while1(|c| c != b')' && c != b'\\'), |s: &[u8]| {
+                    s.to_vec()
+                }),
+            ))),
+            |parts| parts.into_iter().flatten().collect(),
+        ),
+        char(')'),
+    )(input)
+}
+
+fn escape_sequence(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    alt((
+        value(vec![b'\n'], char('n')),
+        value(vec![b'\r'], char('r')),
+        value(vec![b'\t'], char('t')),
+        value(vec![b'\x08'], char('b')),
+        value(vec![b'\x0C'], char('f')),
+        value(vec![b'('], char('(')),
+        value(vec![b')'], char(')')),
+        value(vec![b'\\'], char('\\')),
+        map(octal_escape, |b| vec![b]),
+    ))(input)
+}
+
+fn octal_escape(input: &[u8]) -> IResult<&[u8], u8> {
+    map_res(
+        recognize(tuple((
+            one_of("01234567"),
+            opt(one_of("01234567")),
+            opt(one_of("01234567")),
+        ))),
+        |s: &[u8]| u8::from_str_radix(std::str::from_utf8(s).unwrap(), 8),
+    )(input)
+}
+
+pub fn name(input: &[u8]) -> IResult<&[u8], String> {
+    preceded(
+        char('/'),
+        map(
+            take_while(|c: u8| !is_whitespace(c) && !is_delimiter(c)),
+            |bytes: &[u8]| {
+                let mut result = String::new();
+                let mut chars = bytes.iter();
+
+                while let Some(&c) = chars.next() {
+                    if c == b'#' {
+                        if let (Some(&c1), Some(&c2)) = (chars.next(), chars.next()) {
+                            if let Ok(byte) =
+                                u8::from_str_radix(&format!("{}{}", c1 as char, c2 as char), 16)
+                            {
+                                result.push(byte as char);
+                                continue;
+                            }
+                        }
+                        result.push('#');
+                    } else {
+                        result.push(c as char);
+                    }
+                }
+
+                format!("/{}", result)
+            },
+        ),
+    )(input)
+}

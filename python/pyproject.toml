@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools", "wheel", "pyo3-setuptools>=0.3.0"]
+build-backend = "pyo3_setuptools.build_meta"
+
+[project]
+name = "pdf-ast"
+authors = [
+    {name = "PDF-AST Team", email = "contact@pdf-ast.org"},
+]
+description = "Universal AST library for PDF documents based on ISO 32000-2"
+readme = "README.md"
+license = {text = "MIT OR Apache-2.0"}
+keywords = ["pdf", "ast", "document", "parsing", "analysis", "iso32000", "pdf2.0"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing",
+]
+requires-python = ">=3.7"
+dependencies = [
+    "typing-extensions; python_version<'3.8'",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/pdf-ast/pdf-ast"
+Documentation = "https://pdf-ast.readthedocs.io/"
+Repository = "https://github.com/pdf-ast/pdf-ast"
+"Bug Tracker" = "https://github.com/pdf-ast/pdf-ast/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-benchmark",
+    "black",
+    "mypy",
+    "ruff",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "myst-parser",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py37']
+
+[tool.ruff]
+line-length = 88
+target-version = "py37"
+
+[tool.mypy]
+python_version = "3.7"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
