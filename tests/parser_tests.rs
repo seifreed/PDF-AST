@@ -35,7 +35,8 @@ mod parser_tests {
         assert!(result.is_ok());
         let (_, value) = result.unwrap();
         if let PdfValue::Real(r) = value {
-            assert!((r - 3.14).abs() < f64::EPSILON);
+            let expected = 314.0 / 100.0;
+            assert!((r - expected).abs() < f64::EPSILON);
         } else {
             panic!("Expected real value");
         }

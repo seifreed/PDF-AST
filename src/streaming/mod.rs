@@ -7,8 +7,6 @@ use crate::ast::{AstError, AstNode, AstResult, NodeId, NodeType, PdfDocument};
 use crate::parser::PdfParser;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek};
-#[cfg(feature = "async")]
-use tokio::sync::mpsc;
 
 pub mod chunks;
 pub mod incremental;

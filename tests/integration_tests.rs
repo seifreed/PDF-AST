@@ -166,9 +166,9 @@ mod integration_tests {
         let parser = PdfParser::strict();
 
         for malformed_pdf in malformed_pdfs {
-            match parser.parse_bytes(&malformed_pdf) {
-                Ok(_) => panic!("Should have failed to parse malformed PDF"),
-                Err(_) => {} // Expected to fail
+            // Expected to fail.
+            if parser.parse_bytes(&malformed_pdf).is_ok() {
+                panic!("Should have failed to parse malformed PDF");
             }
         }
     }

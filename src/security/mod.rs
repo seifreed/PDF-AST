@@ -324,9 +324,11 @@ impl SecurityAnalyzer {
         }
 
         for uri in uri_hits {
-            let status = if uri.starts_with("http://") || uri.starts_with("ftp://") {
-                ValidationStatus::Fail
-            } else if uri.starts_with("file://") || uri.contains("\\\\") {
+            let status = if uri.starts_with("http://")
+                || uri.starts_with("ftp://")
+                || uri.starts_with("file://")
+                || uri.contains("\\\\")
+            {
                 ValidationStatus::Fail
             } else {
                 ValidationStatus::Warning

@@ -1,3 +1,5 @@
+#![allow(clippy::items_after_test_module)]
+
 use super::*;
 use crate::plugins::registry::PluginRegistry;
 use std::fs;
@@ -753,6 +755,11 @@ enum LibraryHandle {
     Windows(WindowsLibrary),
     Stub,
 }
+
+// Safety: library handles are OS resources that can be shared across threads;
+// access is synchronized by callers when invoking plugin factories.
+unsafe impl Send for LibraryHandle {}
+unsafe impl Sync for LibraryHandle {}
 
 impl LibraryHandle {
     fn load(path: &Path, sandbox: bool) -> Result<Self, String> {

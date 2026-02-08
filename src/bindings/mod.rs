@@ -2,7 +2,6 @@
 ///
 /// This module provides bindings for various programming languages
 /// to make PDF-AST accessible from different environments.
-
 #[cfg(feature = "python")]
 pub mod python;
 

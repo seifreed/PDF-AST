@@ -69,14 +69,16 @@ fn validate_tsa_chain_with_custom_trust_store() {
     let trust_path = temp_dir.join("tsa_root.pem");
     std::fs::write(&trust_path, &root_pem).expect("write trust store");
 
-    let mut config = CryptoConfig::default();
-    config.trust_store_path = Some(trust_path.to_string_lossy().to_string());
-    config.enable_cert_chain_validation = true;
-    config.enable_tsa_chain_validation = true;
-    config.enable_tsa_revocation_checks = true;
+    let config = CryptoConfig {
+        trust_store_path: Some(trust_path.to_string_lossy().to_string()),
+        enable_cert_chain_validation: true,
+        enable_tsa_chain_validation: true,
+        enable_tsa_revocation_checks: true,
+        ..Default::default()
+    };
 
     let validator = CertificateChainValidator::new(config).expect("validator");
-    let chain = vec![
+    let chain = [
         tsa_cert.to_der().expect("tsa der"),
         root_cert.to_der().expect("root der"),
     ];

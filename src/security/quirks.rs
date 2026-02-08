@@ -7,12 +7,12 @@ pub fn detect_producer_quirks(document: &PdfDocument) -> Vec<ValidationResult> {
         .metadata
         .producer
         .clone()
-        .unwrap_or_else(|| "".to_string());
+        .unwrap_or_default();
     let creator = document
         .metadata
         .creator
         .clone()
-        .unwrap_or_else(|| "".to_string());
+        .unwrap_or_default();
 
     let combined = format!("{} {}", producer, creator).to_lowercase();
 

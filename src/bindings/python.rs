@@ -1,10 +1,10 @@
-use crate::ast::{AstNode, NodeId, NodeType, PdfAstGraph, PdfDocument};
+use crate::ast::{AstNode, NodeId, PdfDocument};
 use crate::bindings::utils;
 use crate::parser::PdfParser;
 use crate::plugins::api::PluginManager;
 use crate::validation::{SchemaRegistry, ValidationReport};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList};
+use pyo3::types::{PyBytes, PyBytesMethods, PyDict, PyModule};
 use pyo3::{Py, PyResult, Python};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,7 +30,7 @@ impl PyPdfDocument {
 
     /// Parse PDF from bytes
     #[staticmethod]
-    fn from_bytes(data: &PyBytes) -> PyResult<Self> {
+    fn from_bytes(data: &Bound<'_, PyBytes>) -> PyResult<Self> {
         let bytes = data.as_bytes();
         let parser = PdfParser::new();
 
@@ -55,64 +55,67 @@ impl PyPdfDocument {
         self.inner
             .ast
             .get_all_nodes()
-            .iter()
-            .map(|node| PyAstNode {
-                inner: node.clone(),
-            })
+            .into_iter()
+            .cloned()
+            .map(|node| PyAstNode { inner: node })
             .collect()
     }
 
     /// Get root node
     fn get_root(&self) -> Option<PyAstNode> {
-        self.inner
-            .ast
-            .get_root()
-            .map(|node_id| {
-                self.inner.ast.get_node(node_id).map(|node| PyAstNode {
-                    inner: node.clone(),
-                })
-            })
-            .flatten()
+        self.inner.ast.get_root().and_then(|node_id| {
+            self.inner
+                .ast
+                .get_node(node_id)
+                .map(|node| PyAstNode { inner: node.clone() })
+        })
     }
 
     /// Get node by ID
     fn get_node(&self, node_id: u64) -> Option<PyAstNode> {
-        self.inner
-            .ast
-            .get_node(NodeId(node_id))
-            .map(|node| PyAstNode {
+        let node_id = usize::try_from(node_id).ok()?;
+        self.inner.ast.get_node(NodeId(node_id)).map(|node| {
+            PyAstNode {
                 inner: node.clone(),
-            })
+            }
+        })
     }
 
     /// Get children of a node
     fn get_children(&self, node_id: u64) -> Vec<PyAstNode> {
+        let node_id = match usize::try_from(node_id) {
+            Ok(id) => NodeId(id),
+            Err(_) => return Vec::new(),
+        };
         self.inner
             .ast
-            .get_children(NodeId(node_id))
+            .get_children(node_id)
             .iter()
             .filter_map(|&child_id| {
-                self.inner.ast.get_node(child_id).map(|node| PyAstNode {
-                    inner: node.clone(),
-                })
+                self.inner
+                    .ast
+                    .get_node(child_id)
+                    .map(|node| PyAstNode { inner: node.clone() })
             })
             .collect()
     }
 
     /// Get nodes by type
     fn get_nodes_by_type(&self, node_type: &str) -> Vec<PyAstNode> {
-        if let Ok(nt) = utils::parse_node_type(node_type) {
-            self.inner
-                .ast
-                .get_nodes_by_type(&nt)
-                .iter()
-                .map(|node| PyAstNode {
-                    inner: node.clone(),
-                })
-                .collect()
-        } else {
-            Vec::new()
-        }
+        let Ok(node_type) = utils::parse_node_type(node_type) else {
+            return Vec::new();
+        };
+        self.inner
+            .ast
+            .get_nodes_by_type(node_type)
+            .iter()
+            .filter_map(|node_id| {
+                self.inner
+                    .ast
+                    .get_node(*node_id)
+                    .map(|node| PyAstNode { inner: node.clone() })
+            })
+            .collect()
     }
 
     /// Validate document against schema
@@ -179,7 +182,7 @@ pub struct PyAstNode {
 impl PyAstNode {
     /// Get node ID
     fn get_id(&self) -> u64 {
-        self.inner.id.0
+        self.inner.id.0 as u64
     }
 
     /// Get node type
@@ -321,7 +324,7 @@ impl PyValidationIssue {
 
     /// Get node ID if available
     fn get_node_id(&self) -> Option<u64> {
-        self.inner.node_id.map(|id| id.0)
+        self.inner.node_id.map(|id| id.0 as u64)
     }
 
     /// Get location if available
@@ -425,7 +428,7 @@ impl PyPluginManager {
 
 /// Module-level functions
 #[pyfunction]
-fn parse_pdf(data: &PyBytes) -> PyResult<PyPdfDocument> {
+fn parse_pdf(data: &Bound<'_, PyBytes>) -> PyResult<PyPdfDocument> {
     PyPdfDocument::from_bytes(data)
 }
 
@@ -446,7 +449,7 @@ fn validate_document(document: &PyPdfDocument, schema_name: &str) -> PyResult<Py
 
 /// Python module
 #[pymodule]
-fn pdf_ast(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pdf_ast(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPdfDocument>()?;
     m.add_class::<PyAstNode>()?;
     m.add_class::<PyValidationReport>()?;

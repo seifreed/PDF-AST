@@ -4,7 +4,7 @@ use pyo3::exceptions::PyValueError;
 /// This module provides basic Python bindings that work with the current codebase state
 /// and can be incrementally improved as the rest of the library stabilizes.
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::types::{PyBytes, PyBytesMethods, PyDict, PyModule};
 use std::collections::HashMap;
 
 /// Simplified PDF document wrapper
@@ -28,7 +28,7 @@ impl PySimplePdfDocument {
 
     /// Parse basic PDF information from bytes
     #[staticmethod]
-    fn from_bytes(data: &PyBytes) -> PyResult<Self> {
+    fn from_bytes(data: &Bound<'_, PyBytes>) -> PyResult<Self> {
         let bytes = data.as_bytes();
 
         // Basic PDF validation
@@ -248,7 +248,7 @@ fn validate_pdf_basic(document: &PySimplePdfDocument) -> PyValidationResult {
 
 /// Parse PDF from bytes (convenience function)
 #[pyfunction]
-fn parse_pdf_simple(data: &PyBytes) -> PyResult<PySimplePdfDocument> {
+fn parse_pdf_simple(data: &Bound<'_, PyBytes>) -> PyResult<PySimplePdfDocument> {
     PySimplePdfDocument::from_bytes(data)
 }
 
@@ -260,7 +260,7 @@ fn get_version() -> String {
 
 /// Simple Python module
 #[pymodule]
-fn pdf_ast_simple(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pdf_ast_simple(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySimplePdfDocument>()?;
     m.add_class::<PyValidationResult>()?;
 

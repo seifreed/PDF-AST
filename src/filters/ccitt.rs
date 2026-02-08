@@ -139,7 +139,7 @@ impl Group3Decoder {
 
     fn decode_1d(&mut self, data: &[u8]) -> Result<Vec<u8>, String> {
         let mut reader = BitReader::new(data);
-        let bytes_per_row = (self.columns + 7) / 8;
+        let bytes_per_row = self.columns.div_ceil(8);
         let mut output = Vec::new();
         let rows = if self.rows == 0 {
             usize::MAX
@@ -188,7 +188,7 @@ impl Group3Decoder {
 
     fn decode_2d(&mut self, data: &[u8]) -> Result<Vec<u8>, String> {
         let mut reader = BitReader::new(data);
-        let bytes_per_row = (self.columns + 7) / 8;
+        let bytes_per_row = self.columns.div_ceil(8);
         let mut output = Vec::new();
         let rows = if self.rows == 0 {
             usize::MAX
@@ -377,7 +377,7 @@ impl Group4Decoder {
 
     fn decode(&mut self, data: &[u8]) -> Result<Vec<u8>, String> {
         let mut reader = BitReader::new(data);
-        let bytes_per_row = (self.columns + 7) / 8;
+        let bytes_per_row = self.columns.div_ceil(8);
         let mut output = Vec::new();
         let rows = if self.rows == 0 {
             usize::MAX

@@ -202,8 +202,8 @@ impl LazyStreamManager {
 mod async_support {
     use super::*;
     use async_trait::async_trait;
-    use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
+    #[allow(dead_code)]
     #[async_trait]
     pub trait AsyncLazyStream {
         async fn load_data_async(&self) -> Result<Bytes, String>;

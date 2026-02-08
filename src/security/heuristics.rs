@@ -13,9 +13,7 @@ pub fn analyze_document_heuristics<R: Read + Seek>(
     document: &PdfDocument,
     reader: &mut R,
 ) -> Result<Vec<ValidationResult>, String> {
-    let current_pos = reader
-        .seek(SeekFrom::Current(0))
-        .map_err(|e| e.to_string())?;
+    let current_pos = reader.stream_position().map_err(|e| e.to_string())?;
     let file_size = reader.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
     reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
 

@@ -310,7 +310,7 @@ impl SchemaConstraint for TrailerSizeConsistencyConstraint {
 
         if let Some(size) = document.trailer.get("Size").and_then(|v| v.as_integer()) {
             let expected_min = max_obj + 1;
-            if (size as i64) < expected_min {
+            if size < expected_min {
                 report.add_issue(ValidationIssue {
                     severity: ValidationSeverity::Warning,
                     code: "TRAILER_SIZE_INCONSISTENT".to_string(),

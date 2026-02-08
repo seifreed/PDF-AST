@@ -26,10 +26,8 @@ pub fn extract_richmedia_info(
 
     if let Some(settings_dict) = settings {
         info.script_count = extract_scripts(settings_dict);
-    } else if let Some(settings_val) = annotation.get("RichMediaSettings") {
-        if let PdfValue::Dictionary(dict) = settings_val {
-            info.script_count = extract_scripts(dict);
-        }
+    } else if let Some(PdfValue::Dictionary(dict)) = annotation.get("RichMediaSettings") {
+        info.script_count = extract_scripts(dict);
     }
 
     info

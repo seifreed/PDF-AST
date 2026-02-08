@@ -47,10 +47,7 @@ fn detect_3d_format(stream: &PdfStream) -> Option<String> {
         }
     }
 
-    let data = match stream.raw_data() {
-        Some(d) => d,
-        None => return None,
-    };
+    let data = stream.raw_data()?;
 
     if data.len() >= 4 && &data[0..4] == b"U3D\0" {
         return Some("U3D".to_string());

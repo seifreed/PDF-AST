@@ -48,18 +48,14 @@ fn content_stream_operator_offsets_present() {
         if node
             .metadata
             .properties
-            .get("content_operator_index")
-            .is_some()
-        {
-            if node
+            .contains_key("content_operator_index")
+            && node
                 .metadata
                 .properties
-                .get("stream_local_offset")
-                .is_some()
-            {
-                found_offset = true;
-                break;
-            }
+                .contains_key("stream_local_offset")
+        {
+            found_offset = true;
+            break;
         }
     }
 

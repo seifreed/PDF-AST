@@ -441,7 +441,7 @@ impl Pkcs7Handler {
 
         let mut output = Vec::new();
         let verify_result = pkcs7.verify(
-            &certs,
+            certs,
             &store,
             if signed_data.is_empty() {
                 None

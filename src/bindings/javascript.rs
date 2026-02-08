@@ -1,4 +1,6 @@
-use crate::ast::{AstNode, NodeId, NodeType, PdfDocument, PdfVersion};
+#![allow(dead_code)]
+
+use crate::ast::{AstNode, NodeId, PdfDocument, PdfVersion};
 use crate::parser::PdfParser;
 use crate::plugins::api::PluginManager;
 use crate::validation::{SchemaRegistry, ValidationReport};
@@ -66,8 +68,8 @@ impl JsPdfDocument {
         let nodes = document.ast.get_all_nodes();
         let js_array = cx.empty_array();
 
-        for (i, node) in nodes.iter().enumerate() {
-            let js_node = JsAstNode::from_node(&mut cx, node.clone())?;
+        for (i, node) in nodes.into_iter().enumerate() {
+            let js_node = JsAstNode::from_node(&mut cx, (*node).clone())?;
             js_array.set(&mut cx, i as u32, js_node)?;
         }
 
@@ -97,7 +99,12 @@ impl JsPdfDocument {
         let node_id = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
         let document = this.inner.lock().unwrap();
 
-        if let Some(node) = document.ast.get_node(NodeId(node_id)) {
+        let node_id = match usize::try_from(node_id) {
+            Ok(id) => NodeId(id),
+            Err(_) => return Ok(cx.null().upcast()),
+        };
+
+        if let Some(node) = document.ast.get_node(node_id) {
             let js_node = JsAstNode::from_node(&mut cx, node.clone())?;
             Ok(js_node.upcast())
         } else {
@@ -112,7 +119,12 @@ impl JsPdfDocument {
         let node_id = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
         let document = this.inner.lock().unwrap();
 
-        let children = document.ast.get_children(NodeId(node_id));
+        let node_id = match usize::try_from(node_id) {
+            Ok(id) => NodeId(id),
+            Err(_) => return Ok(cx.empty_array()),
+        };
+
+        let children = document.ast.get_children(node_id);
         let js_array = cx.empty_array();
 
         for (i, &child_id) in children.iter().enumerate() {
@@ -135,11 +147,13 @@ impl JsPdfDocument {
         let js_array = cx.empty_array();
 
         if let Ok(node_type) = super::utils::parse_node_type(&type_str) {
-            let nodes = document.ast.get_nodes_by_type(&node_type);
+            let nodes = document.ast.get_nodes_by_type(node_type);
 
-            for (i, node) in nodes.iter().enumerate() {
-                let js_node = JsAstNode::from_node(&mut cx, node.clone())?;
-                js_array.set(&mut cx, i as u32, js_node)?;
+            for (i, node_id) in nodes.iter().enumerate() {
+                if let Some(node) = document.ast.get_node(*node_id) {
+                    let js_node = JsAstNode::from_node(&mut cx, node.clone())?;
+                    js_array.set(&mut cx, i as u32, js_node)?;
+                }
             }
         }
 
@@ -174,7 +188,8 @@ impl JsPdfDocument {
 
         let stats = cx.empty_object();
         let total_nodes = document.ast.get_all_nodes().len();
-        stats.set(&mut cx, "totalNodes", cx.number(total_nodes))?;
+        let total_nodes_value = cx.number(total_nodes as f64);
+        stats.set(&mut cx, "totalNodes", total_nodes_value)?;
 
         // Count nodes by type
         let mut type_counts = HashMap::new();
@@ -185,12 +200,14 @@ impl JsPdfDocument {
 
         let type_stats = cx.empty_object();
         for (node_type, count) in type_counts {
-            type_stats.set(&mut cx, node_type, cx.number(count))?;
+            let count_value = cx.number(count as f64);
+            type_stats.set(&mut cx, node_type.as_str(), count_value)?;
         }
         stats.set(&mut cx, "nodeTypes", type_stats)?;
 
         let version_str = format!("{}.{}", document.version.major, document.version.minor);
-        stats.set(&mut cx, "version", cx.string(version_str))?;
+        let version_value = cx.string(version_str);
+        stats.set(&mut cx, "version", version_value)?;
 
         Ok(stats)
     }
@@ -204,7 +221,10 @@ pub struct JsAstNode {
 impl Finalize for JsAstNode {}
 
 impl JsAstNode {
-    fn from_node(cx: &mut FunctionContext, node: AstNode) -> JsResult<JsBox<JsAstNode>> {
+    fn from_node<'a>(
+        cx: &mut FunctionContext<'a>,
+        node: AstNode,
+    ) -> JsResult<'a, JsBox<JsAstNode>> {
         let js_node = JsAstNode { inner: node };
         Ok(cx.boxed(js_node))
     }
@@ -238,20 +258,24 @@ impl JsAstNode {
             .downcast_or_throw::<JsBox<JsAstNode>, _>(&mut cx)?;
         let meta = cx.empty_object();
         if let Some(offset) = this.inner.metadata.offset {
-            meta.set(&mut cx, "offset", cx.number(offset as f64))?;
+            let offset_value = cx.number(offset as f64);
+            meta.set(&mut cx, "offset", offset_value)?;
         }
         if let Some(size) = this.inner.metadata.size {
-            meta.set(&mut cx, "size", cx.number(size as f64))?;
+            let size_value = cx.number(size as f64);
+            meta.set(&mut cx, "size", size_value)?;
         }
         let warnings = cx.empty_array();
         for (i, warning) in this.inner.metadata.warnings.iter().enumerate() {
-            warnings.set(&mut cx, i as u32, cx.string(warning))?;
+            let warning_value = cx.string(warning);
+            warnings.set(&mut cx, i as u32, warning_value)?;
         }
         meta.set(&mut cx, "warnings", warnings)?;
+        let error_count = cx.number(this.inner.metadata.errors.len() as f64);
         meta.set(
             &mut cx,
             "errorCount",
-            cx.number(this.inner.metadata.errors.len() as f64),
+            error_count,
         )?;
         Ok(meta.upcast())
     }
@@ -339,41 +363,20 @@ impl JsValidationReport {
             .downcast_or_throw::<JsBox<JsValidationReport>, _>(&mut cx)?;
         let stats = cx.empty_object();
 
-        stats.set(
-            &mut cx,
-            "totalChecks",
-            cx.number(this.inner.statistics.total_checks),
-        )?;
-        stats.set(
-            &mut cx,
-            "passedChecks",
-            cx.number(this.inner.statistics.passed_checks),
-        )?;
-        stats.set(
-            &mut cx,
-            "failedChecks",
-            cx.number(this.inner.statistics.failed_checks),
-        )?;
-        stats.set(
-            &mut cx,
-            "infoCount",
-            cx.number(this.inner.statistics.info_count),
-        )?;
-        stats.set(
-            &mut cx,
-            "warningCount",
-            cx.number(this.inner.statistics.warning_count),
-        )?;
-        stats.set(
-            &mut cx,
-            "errorCount",
-            cx.number(this.inner.statistics.error_count),
-        )?;
-        stats.set(
-            &mut cx,
-            "criticalCount",
-            cx.number(this.inner.statistics.critical_count),
-        )?;
+        let total_checks_value = cx.number(this.inner.statistics.total_checks as f64);
+        stats.set(&mut cx, "totalChecks", total_checks_value)?;
+        let passed_checks_value = cx.number(this.inner.statistics.passed_checks as f64);
+        stats.set(&mut cx, "passedChecks", passed_checks_value)?;
+        let failed_checks_value = cx.number(this.inner.statistics.failed_checks as f64);
+        stats.set(&mut cx, "failedChecks", failed_checks_value)?;
+        let info_count_value = cx.number(this.inner.statistics.info_count as f64);
+        stats.set(&mut cx, "infoCount", info_count_value)?;
+        let warning_count_value = cx.number(this.inner.statistics.warning_count as f64);
+        stats.set(&mut cx, "warningCount", warning_count_value)?;
+        let error_count_value = cx.number(this.inner.statistics.error_count as f64);
+        stats.set(&mut cx, "errorCount", error_count_value)?;
+        let critical_count_value = cx.number(this.inner.statistics.critical_count as f64);
+        stats.set(&mut cx, "criticalCount", critical_count_value)?;
 
         Ok(stats)
     }
@@ -387,10 +390,10 @@ pub struct JsValidationIssue {
 impl Finalize for JsValidationIssue {}
 
 impl JsValidationIssue {
-    fn from_issue(
-        cx: &mut FunctionContext,
+    fn from_issue<'a>(
+        cx: &mut FunctionContext<'a>,
         issue: crate::validation::ValidationIssue,
-    ) -> JsResult<JsBox<JsValidationIssue>> {
+    ) -> JsResult<'a, JsBox<JsValidationIssue>> {
         let js_issue = JsValidationIssue { inner: issue };
         Ok(cx.boxed(js_issue))
     }
@@ -483,24 +486,21 @@ impl JsPluginManager {
         *js_document.inner.lock().unwrap() = document;
 
         let result = cx.empty_object();
-        result.set(&mut cx, "totalPlugins", cx.number(summary.total_plugins))?;
-        result.set(
-            &mut cx,
-            "successfulPlugins",
-            cx.number(summary.successful_plugins),
-        )?;
-        result.set(&mut cx, "failedPlugins", cx.number(summary.failed_plugins))?;
-        result.set(
-            &mut cx,
-            "executionTimeMs",
-            cx.number(summary.total_execution_time_ms as f64),
-        )?;
+        let total_plugins = cx.number(summary.total_plugins as f64);
+        result.set(&mut cx, "totalPlugins", total_plugins)?;
+        let successful_plugins_value = cx.number(summary.successful_plugins as f64);
+        result.set(&mut cx, "successfulPlugins", successful_plugins_value)?;
+        let failed_plugins = cx.number(summary.failed_plugins as f64);
+        result.set(&mut cx, "failedPlugins", failed_plugins)?;
+        let execution_time_value = cx.number(summary.total_execution_time_ms as f64);
+        result.set(&mut cx, "executionTimeMs", execution_time_value)?;
 
         // Convert plugin results
         let results_obj = cx.empty_object();
         for (name, result) in summary.plugin_results {
             let result_str = format!("{:?}", result);
-            results_obj.set(&mut cx, name.as_str(), cx.string(result_str))?;
+            let result_value = cx.string(result_str);
+            results_obj.set(&mut cx, name.as_str(), result_value)?;
         }
         result.set(&mut cx, "pluginResults", results_obj)?;
 
@@ -518,14 +518,19 @@ impl JsPluginManager {
 
         for (i, metadata) in plugins.iter().enumerate() {
             let plugin_obj = cx.empty_object();
-            plugin_obj.set(&mut cx, "name", cx.string(&metadata.name))?;
-            plugin_obj.set(&mut cx, "version", cx.string(&metadata.version))?;
-            plugin_obj.set(&mut cx, "description", cx.string(&metadata.description))?;
-            plugin_obj.set(&mut cx, "author", cx.string(&metadata.author))?;
+            let name_value = cx.string(&metadata.name);
+            plugin_obj.set(&mut cx, "name", name_value)?;
+            let version_value = cx.string(&metadata.version);
+            plugin_obj.set(&mut cx, "version", version_value)?;
+            let description_value = cx.string(&metadata.description);
+            plugin_obj.set(&mut cx, "description", description_value)?;
+            let author_value = cx.string(&metadata.author);
+            plugin_obj.set(&mut cx, "author", author_value)?;
 
             let tags_array = cx.empty_array();
             for (j, tag) in metadata.tags.iter().enumerate() {
-                tags_array.set(&mut cx, j as u32, cx.string(tag))?;
+                let tag_value = cx.string(tag);
+                tags_array.set(&mut cx, j as u32, tag_value)?;
             }
             plugin_obj.set(&mut cx, "tags", tags_array)?;
 
@@ -537,8 +542,7 @@ impl JsPluginManager {
 }
 
 /// Module-level functions
-fn js_parse_pdf(mut cx: FunctionContext) -> JsResult<JsBox<JsPdfDocument>> {
-    let buffer = cx.argument::<JsBuffer>(0)?;
+fn js_parse_pdf(cx: FunctionContext) -> JsResult<JsBox<JsPdfDocument>> {
     JsPdfDocument::js_from_buffer(cx)
 }
 
@@ -548,7 +552,8 @@ fn js_get_available_schemas(mut cx: FunctionContext) -> JsResult<JsArray> {
     let js_array = cx.empty_array();
 
     for (i, schema) in schemas.iter().enumerate() {
-        js_array.set(&mut cx, i as u32, cx.string(schema))?;
+        let schema_value = cx.string(schema);
+        js_array.set(&mut cx, i as u32, schema_value)?;
     }
 
     Ok(js_array)
@@ -559,7 +564,8 @@ fn js_get_node_types(mut cx: FunctionContext) -> JsResult<JsArray> {
     let js_array = cx.empty_array();
 
     for (i, node_type) in types.iter().enumerate() {
-        js_array.set(&mut cx, i as u32, cx.string(node_type))?;
+        let type_value = cx.string(node_type);
+        js_array.set(&mut cx, i as u32, type_value)?;
     }
 
     Ok(js_array)
@@ -584,8 +590,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("getNodeTypes", js_get_node_types)?;
 
     // Constants
-    cx.export_value("VERSION", cx.string("0.1.0"))?;
-    cx.export_value("AUTHOR", cx.string("PDF-AST Project"))?;
+    let version_value = cx.string("0.1.0");
+    cx.export_value("VERSION", version_value)?;
+    let author_value = cx.string("PDF-AST Project");
+    cx.export_value("AUTHOR", author_value)?;
 
     Ok(())
 }

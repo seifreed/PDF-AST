@@ -16,6 +16,9 @@ use crate::types::*;
 use std::collections::HashMap;
 use std::io::{BufRead, Read, Seek, SeekFrom};
 
+type ParseHeaderResult<'a> =
+    Result<(&'a [u8], ObjectId), nom::Err<nom::error::Error<&'a [u8]>>>;
+
 // Buffer size constants
 const LINEARIZATION_BUFFER_SIZE: usize = 1024;
 const HEADER_BUFFER_SIZE: usize = 32;
@@ -233,7 +236,7 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
     }
 
     fn read_file_size(reader: &mut R) -> AstResult<u64> {
-        let current = reader.seek(SeekFrom::Current(0))?;
+        let current = reader.stream_position()?;
         let end = reader.seek(SeekFrom::End(0))?;
         reader.seek(SeekFrom::Start(current))?;
         Ok(end)
@@ -844,10 +847,11 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
                         while j < data.len() && data[j].is_ascii_digit() {
                             j += 1;
                         }
-                        if j + 4 <= data.len() && &data[j..j + 4] == b" obj" {
-                            if start > i {
-                                return Some(i);
-                            }
+                        if j + 4 <= data.len()
+                            && &data[j..j + 4] == b" obj"
+                            && start > i
+                        {
+                            return Some(i);
                         }
                     }
                 }
@@ -856,9 +860,7 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
         None
     }
 
-    fn parse_object_header(
-        input: &[u8],
-    ) -> Result<(&[u8], ObjectId), nom::Err<nom::error::Error<&[u8]>>> {
+    fn parse_object_header(input: &[u8]) -> ParseHeaderResult<'_> {
         let (input, obj_num) = integer(input)?;
         let (input, _) = nom::character::complete::multispace1(input)?;
         let (input, gen_num) = integer(input)?;
@@ -971,7 +973,7 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
         }
 
         // Get Index array (object number ranges)
-        let index = Self::extract_xref_index_ranges(&dict);
+        let index = Self::extract_xref_index_ranges(dict);
 
         // Parse entries
         let entry_size = widths[0] + widths[1] + widths[2];
@@ -1660,7 +1662,7 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
         pages_ref: &PdfReference,
         parent_id: crate::ast::NodeId,
     ) -> AstResult<()> {
-        let mut stack = vec![(pages_ref.clone(), parent_id)];
+        let mut stack = vec![(*pages_ref, parent_id)];
         let mut visited = std::collections::HashSet::new();
 
         while let Some((current_ref, current_parent)) = stack.pop() {
@@ -1690,7 +1692,7 @@ impl<R: Read + Seek + BufRead> PdfFileParser<R> {
                 if let Some(PdfValue::Array(kids)) = pages_dict.get("Kids") {
                     for kid in kids.iter() {
                         if let Some(kid_ref) = kid.as_reference() {
-                            stack.push((kid_ref.clone(), pages_id));
+                            stack.push((*kid_ref, pages_id));
                         }
                     }
                 }

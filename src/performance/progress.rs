@@ -540,8 +540,10 @@ mod tests {
 
     #[test]
     fn test_progress_callbacks() {
-        let mut config = PerformanceConfig::default();
-        config.progress_interval = Duration::from_nanos(1); // Very short interval to ensure callbacks fire
+        let config = PerformanceConfig {
+            progress_interval: Duration::from_nanos(1), // Very short interval to ensure callbacks fire
+            ..Default::default()
+        };
         let tracker = ProgressTracker::new(config);
 
         let callback_count = Arc::new(AtomicUsize::new(0));

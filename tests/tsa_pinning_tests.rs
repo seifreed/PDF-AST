@@ -36,8 +36,10 @@ fn make_test_cert_fingerprint() -> String {
 #[test]
 fn tsa_pinning_allow_list() {
     let fingerprint = make_test_cert_fingerprint();
-    let mut config = CryptoConfig::default();
-    config.tsa_allow_fingerprints = vec![fingerprint.clone()];
+    let config = CryptoConfig {
+        tsa_allow_fingerprints: vec![fingerprint.clone()],
+        ..Default::default()
+    };
     let result = check_tsa_pinning_for_test(&config, &fingerprint);
     assert_eq!(result, Some((true, None)));
 }
@@ -46,8 +48,10 @@ fn tsa_pinning_allow_list() {
 #[test]
 fn tsa_pinning_allow_list_rejects_unknown() {
     let fingerprint = make_test_cert_fingerprint();
-    let mut config = CryptoConfig::default();
-    config.tsa_allow_fingerprints = vec!["deadbeef".to_string()];
+    let config = CryptoConfig {
+        tsa_allow_fingerprints: vec!["deadbeef".to_string()],
+        ..Default::default()
+    };
     let result = check_tsa_pinning_for_test(&config, &fingerprint);
     assert!(matches!(result, Some((false, Some(_)))));
 }
@@ -56,8 +60,10 @@ fn tsa_pinning_allow_list_rejects_unknown() {
 #[test]
 fn tsa_pinning_block_list_rejects() {
     let fingerprint = make_test_cert_fingerprint();
-    let mut config = CryptoConfig::default();
-    config.tsa_block_fingerprints = vec![fingerprint.clone()];
+    let config = CryptoConfig {
+        tsa_block_fingerprints: vec![fingerprint.clone()],
+        ..Default::default()
+    };
     let result = check_tsa_pinning_for_test(&config, &fingerprint);
     assert!(matches!(result, Some((false, Some(_)))));
 }

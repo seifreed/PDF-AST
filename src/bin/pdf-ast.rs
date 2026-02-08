@@ -1032,12 +1032,13 @@ fn build_crypto_config(
     tsa_allow_fingerprint: &[String],
     tsa_block_fingerprint: &[String],
 ) -> CryptoConfig {
-    let mut config = CryptoConfig::default();
-    config.enable_tsa_chain_validation = !disable_tsa_chain_validation;
-    config.enable_tsa_revocation_checks = !disable_tsa_revocation_checks;
-    config.tsa_allow_fingerprints = tsa_allow_fingerprint.to_vec();
-    config.tsa_block_fingerprints = tsa_block_fingerprint.to_vec();
-    config
+    CryptoConfig {
+        enable_tsa_chain_validation: !disable_tsa_chain_validation,
+        enable_tsa_revocation_checks: !disable_tsa_revocation_checks,
+        tsa_allow_fingerprints: tsa_allow_fingerprint.to_vec(),
+        tsa_block_fingerprints: tsa_block_fingerprint.to_vec(),
+        ..Default::default()
+    }
 }
 
 fn analyze_signatures(
@@ -2049,6 +2050,7 @@ fn handle_schema_command(
     Ok(())
 }
 
+#[allow(clippy::large_enum_variant)]
 enum InputAst {
     Serializable(SerializableDocument),
     Stable(StableAstSchema),

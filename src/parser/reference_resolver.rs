@@ -608,27 +608,25 @@ impl<R: BufRead + Seek> ReferenceResolver<R> {
             }
 
             Ok(node_id)
-        } else {
-            if self.tolerant {
-                let node_id = ast.create_node(NodeType::Object(obj_id), PdfValue::Null);
-                if let Some(node) = ast.get_node_mut(node_id) {
-                    node.metadata.errors.push(crate::ast::node::ParseError {
-                        code: crate::ast::node::ErrorCode::MissingObject,
-                        message: "Object not found in xref table".to_string(),
-                        offset: None,
-                        recoverable: true,
-                    });
-                    node.metadata
-                        .warnings
-                        .push("Recovered missing object reference".to_string());
-                    node.metadata
-                        .properties
-                        .insert("recovery".to_string(), "xref_missing_object".to_string());
-                }
-                Ok(node_id)
-            } else {
-                Err(format!("Object {} not found in xref table", obj_id))
+        } else if self.tolerant {
+            let node_id = ast.create_node(NodeType::Object(obj_id), PdfValue::Null);
+            if let Some(node) = ast.get_node_mut(node_id) {
+                node.metadata.errors.push(crate::ast::node::ParseError {
+                    code: crate::ast::node::ErrorCode::MissingObject,
+                    message: "Object not found in xref table".to_string(),
+                    offset: None,
+                    recoverable: true,
+                });
+                node.metadata
+                    .warnings
+                    .push("Recovered missing object reference".to_string());
+                node.metadata
+                    .properties
+                    .insert("recovery".to_string(), "xref_missing_object".to_string());
             }
+            Ok(node_id)
+        } else {
+            Err(format!("Object {} not found in xref table", obj_id))
         }
     }
 

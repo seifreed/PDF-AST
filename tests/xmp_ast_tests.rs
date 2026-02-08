@@ -26,7 +26,7 @@ fn build_xmp_pdf() -> Vec<u8> {
 
     let obj4_offset = pdf.len();
     pdf.push_str("4 0 obj\n<< /Type /Metadata /Subtype /XML /Length ");
-    pdf.push_str(&format!("{}", xmp.as_bytes().len()));
+    pdf.push_str(&format!("{}", xmp.len()));
     pdf.push_str(" >>\nstream\n");
     pdf.push_str(xmp);
     pdf.push_str("\nendstream\nendobj\n");

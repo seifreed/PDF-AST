@@ -649,7 +649,7 @@ pub const FAX_MAIN_TABLE: [FaxTabEnt; 128] = [
     },
 ];
 
-pub const FAX_WHITE_TABLE: [FaxTabEnt; 4096] = [
+pub static FAX_WHITE_TABLE: [FaxTabEnt; 4096] = [
     FaxTabEnt {
         state: 12,
         width: 11,
@@ -21132,7 +21132,7 @@ pub const FAX_WHITE_TABLE: [FaxTabEnt; 4096] = [
     },
 ];
 
-pub const FAX_BLACK_TABLE: [FaxTabEnt; 8192] = [
+pub static FAX_BLACK_TABLE: [FaxTabEnt; 8192] = [
     FaxTabEnt {
         state: 12,
         width: 11,

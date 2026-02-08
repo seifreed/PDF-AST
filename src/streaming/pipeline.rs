@@ -149,6 +149,7 @@ pub enum PipelineItemType {
 
 /// Data carried by pipeline items
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum PipelineData {
     Bytes(Vec<u8>),
     Node(AstNode),
@@ -235,51 +236,53 @@ impl ProcessingPipeline {
     /// Process a single item through all stages (async version)
     #[cfg(feature = "async")]
     async fn process_item(&self, mut item: PipelineItem) -> AstResult<PipelineItem> {
-        for stage in &self.stages {
-            if stage.can_process(&item.item_type) {
-                let start_time = std::time::Instant::now();
+        'retry: loop {
+            for stage in &self.stages {
+                if stage.can_process(&item.item_type) {
+                    let start_time = std::time::Instant::now();
 
-                // Process with timeout
-                let result = tokio::time::timeout(
-                    std::time::Duration::from_millis(self.config.timeout_ms),
-                    stage.process(item.clone()),
-                )
-                .await;
+                    // Process with timeout
+                    let result = tokio::time::timeout(
+                        std::time::Duration::from_millis(self.config.timeout_ms),
+                        stage.process(item.clone()),
+                    )
+                    .await;
 
-                match result {
-                    Ok(Ok(processed_item)) => {
-                        item = processed_item;
-                        item.stage_history.push(stage.name().to_string());
+                    match result {
+                        Ok(Ok(processed_item)) => {
+                            item = processed_item;
+                            item.stage_history.push(stage.name().to_string());
 
-                        // Update stage statistics
-                        let processing_time = start_time.elapsed().as_millis() as u64;
-                        self.update_stage_statistics(stage.name(), processing_time, false)
-                            .await;
-                    }
-                    Ok(Err(e)) => {
-                        // Stage processing error
-                        self.update_stage_statistics(stage.name(), 0, true).await;
-
-                        // Retry logic
-                        if item.metadata.retry_count < self.config.retry_attempts {
-                            item.metadata.retry_count += 1;
-                            return self.process_item(item).await;
-                        } else {
-                            return Err(e);
+                            // Update stage statistics
+                            let processing_time = start_time.elapsed().as_millis() as u64;
+                            self.update_stage_statistics(stage.name(), processing_time, false)
+                                .await;
                         }
-                    }
-                    Err(_) => {
-                        // Timeout
-                        self.update_stage_statistics(stage.name(), 0, true).await;
-                        return Err(crate::ast::AstError::Parse(
-                            "Pipeline stage timeout".to_string(),
-                        ));
+                        Ok(Err(e)) => {
+                            // Stage processing error
+                            self.update_stage_statistics(stage.name(), 0, true).await;
+
+                            // Retry logic
+                            if item.metadata.retry_count < self.config.retry_attempts {
+                                item.metadata.retry_count += 1;
+                                continue 'retry;
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                        Err(_) => {
+                            // Timeout
+                            self.update_stage_statistics(stage.name(), 0, true).await;
+                            return Err(crate::ast::AstError::ParseError(
+                                "Pipeline stage timeout".to_string(),
+                            ));
+                        }
                     }
                 }
             }
-        }
 
-        Ok(item)
+            return Ok(item);
+        }
     }
 
     /// Update pipeline statistics

@@ -12,16 +12,14 @@ pub struct LtvInfo {
 }
 
 pub fn extract_ltv_info(dss: &PdfDictionary) -> LtvInfo {
-    let mut info = LtvInfo::default();
-    info.has_dss = true;
-
-    info.certs_count = count_array_items(dss.get("Certs"));
-    info.ocsp_count = count_array_items(dss.get("OCSPs"));
-    info.crl_count = count_array_items(dss.get("CRLs"));
-    info.timestamp_count = count_array_items(dss.get("TS"));
-    info.vri_count = count_vri_entries(dss.get("VRI"));
-
-    info
+    LtvInfo {
+        has_dss: true,
+        certs_count: count_array_items(dss.get("Certs")),
+        ocsp_count: count_array_items(dss.get("OCSPs")),
+        crl_count: count_array_items(dss.get("CRLs")),
+        timestamp_count: count_array_items(dss.get("TS")),
+        vri_count: count_vri_entries(dss.get("VRI")),
+    }
 }
 
 fn count_array_items(value: Option<&PdfValue>) -> usize {

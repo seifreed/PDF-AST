@@ -803,11 +803,11 @@ mod tests {
     #[test]
     fn test_bitmap_operations() {
         let mut bitmap = Bitmap::new(8, 8);
-        assert_eq!(bitmap.get_pixel(0, 0), false);
+        assert!(!bitmap.get_pixel(0, 0));
 
         bitmap.set_pixel(3, 4, true);
-        assert_eq!(bitmap.get_pixel(3, 4), true);
-        assert_eq!(bitmap.get_pixel(3, 5), false);
+        assert!(bitmap.get_pixel(3, 4));
+        assert!(!bitmap.get_pixel(3, 5));
     }
 
     #[test]

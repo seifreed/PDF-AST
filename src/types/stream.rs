@@ -293,7 +293,7 @@ impl PdfStream {
                 let crypt_name = params
                     .and_then(|p| p.get("Name"))
                     .and_then(|v| v.as_name())
-                    .map(|n| n.clone())
+                    .cloned()
                     .unwrap_or_else(|| PdfName::new("Identity"));
                 Some(StreamFilter::Crypt(CryptFilter { name: crypt_name }))
             }

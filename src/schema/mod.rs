@@ -236,7 +236,7 @@ fn parse_object_id(text: &str) -> Option<(u32, u16)> {
             numbers.push(num);
         }
     }
-    let number = numbers.get(0).copied()?;
+    let number = numbers.first().copied()?;
     let generation = numbers.get(1).copied().unwrap_or(0) as u16;
     Some((number, generation))
 }

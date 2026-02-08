@@ -104,8 +104,8 @@ fn parse_message_imprint(
     obj: &der_parser::ber::BerObject,
 ) -> Option<(Option<String>, Option<Vec<u8>>)> {
     let seq = obj.as_sequence().ok()?;
-    let alg_seq = seq.get(0)?.as_sequence().ok()?;
-    let alg_oid = extract_oid_string(alg_seq.get(0)?);
+    let alg_seq = seq.first()?.as_sequence().ok()?;
+    let alg_oid = extract_oid_string(alg_seq.first()?);
     let alg_name = alg_oid
         .as_deref()
         .and_then(map_hash_oid)
@@ -118,7 +118,7 @@ fn parse_message_imprint(
 #[cfg(feature = "crypto")]
 fn parse_accuracy(obj: &der_parser::ber::BerObject) -> Option<TimestampAccuracy> {
     let seq = obj.as_sequence().ok()?;
-    let seconds = seq.get(0)?.as_u64().ok()?;
+    let seconds = seq.first()?.as_u64().ok()?;
     let mut millis = None;
     let mut micros = None;
     for (idx, item) in seq.iter().enumerate().skip(1) {
@@ -138,7 +138,7 @@ fn parse_accuracy(obj: &der_parser::ber::BerObject) -> Option<TimestampAccuracy>
 #[cfg(feature = "crypto")]
 fn extract_tst_info_from_cms(obj: &der_parser::ber::BerObject) -> Option<Vec<u8>> {
     let seq = obj.as_sequence().ok()?;
-    let content_type = seq.get(0).and_then(extract_oid_string)?;
+    let content_type = seq.first().and_then(extract_oid_string)?;
     if content_type != "1.2.840.113549.1.7.2" {
         return None;
     }
@@ -150,7 +150,7 @@ fn extract_tst_info_from_cms(obj: &der_parser::ber::BerObject) -> Option<Vec<u8>
 
     let encap = signed_data.get(2)?;
     let encap_seq = encap.as_sequence().ok()?;
-    let econtent_type = encap_seq.get(0).and_then(extract_oid_string)?;
+    let econtent_type = encap_seq.first().and_then(extract_oid_string)?;
     if econtent_type != "1.2.840.113549.1.9.16.1.4" {
         return None;
     }
